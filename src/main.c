@@ -17,14 +17,6 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
     if (uMsg == WOM_DONE) {
         static int outputBufferIndex;
 
-        //WAVEHDR other = *(
-        //    (LPWAVEHDR)
-        //    (
-        //        ((LPWAVEHDR)param1)->dwUser
-        //        )
-        //    );
-        //((LPWAVEHDR)(param1))->lpData
-
         if (outputBufferIndex == 1) {
             outputBufferIndex = 2;
             waveOutWrite(hWO, &outputHeader2, sizeof(WAVEHDR));
