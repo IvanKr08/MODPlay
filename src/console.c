@@ -95,11 +95,27 @@ void printRow() {
     string[60] = '\n';
     WriteConsoleA(stdo, string, 61, 0, 0);
 
-    return;
-    //Colorize
+
+
     DWORD tmp;
     COORD coord;
     CONSOLE_SCREEN_BUFFER_INFO info;
+    GetConsoleScreenBufferInfo(stdo, &info);
+    coord.Y = info.dwCursorPosition.Y - 1;
+    coord.X = 9;
+
+    for (size_t i = 0; i < 4; i++) {
+        FillConsoleOutputAttribute(stdo, getNote(i).sample % 8, 1, coord, &tmp);
+        coord.X++;
+        FillConsoleOutputAttribute(stdo, (getNote(i).sample % 8) | FOREGROUND_INTENSITY, 1, coord, &tmp);
+        coord.X += 13;
+    }
+
+    return;
+    //Colorize
+    //DWORD tmp;
+    //COORD coord;
+    //CONSOLE_SCREEN_BUFFER_INFO info;
     GetConsoleScreenBufferInfo(stdo, &info);
     coord.Y = info.dwCursorPosition.Y - 1;
     coord.X = 0;

@@ -2,10 +2,10 @@
 #include "mod.h"
 #include "console.h"
 
-WAVEFORMATEX soundFormat;
-HWAVEOUT hWaveOut;
-WAVEHDR outputHeader1, outputHeader2;
-LRSample buff1[S_SPB], buff2[S_SPB];
+static WAVEFORMATEX soundFormat;
+static HWAVEOUT hWaveOut;
+static WAVEHDR outputHeader1, outputHeader2;
+static LRSample buff1[S_SPB], buff2[S_SPB];
 
 void hangThread() {
     SuspendThread(GetCurrentThread());

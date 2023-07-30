@@ -101,11 +101,11 @@ void loadSong(wstr fileName) {
     }
 
     //Load & print patterns data
-    printS("Patterns:");
+    //printS("Patterns:");
     for (size_t i = 0; i < song.patternCount; i++) {
-        printFormat("\n| Pattern %i:\n", 1, i);
+        //printFormat("\n| Pattern %i:\n", 1, i);
         for (size_t j = 0; j < 64; j++) {
-            printS("|");
+            //printS("|");
             for (size_t n = 0; n < 4; n++) {
                 Note* note  = &song.patterns[i][(j << 2) + n];
                 uint32 rawNote  = (readDWord(file));
@@ -115,15 +115,16 @@ void loadSong(wstr fileName) {
                 note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
                 note->effectArg = ((rawNote & 0b00000000000000000000000011111111) >> 0);
 
+                //printRow();
                 //Print note
-                cstr noteName = "...";
-                if (note->period != 0) for (int m = 0; m < 36; m++) if (note->period == tuning0[m]) noteName = noteNames[m + 1];
+                //cstr noteName = "...";
+                //if (note->period != 0) for (int m = 0; m < 36; m++) if (note->period == tuning0[m]) noteName = noteNames[m + 1];
                 
-                printFormat(" %s %-2i %01X%02X |", 4, noteName, note->sample, note->effect, note->effectArg);
+                //printFormat(" %s %-2i %01X%02X |", 4, noteName, note->sample, note->effect, note->effectArg);
             }
-            printC('\n');
+            //printC('\n');
         }
-        printS("\n");
+        //printS("\n");
     }
     // ===
     // Samples
