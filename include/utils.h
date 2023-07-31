@@ -36,7 +36,7 @@ void hangThread();
 
 #define A_SR  44100         //SampleRate (11025 | 22050 | 44100)
 #define A_BPB (4410)        //Bytes per buffer
-#define S_SPB (DIV2(A_BPB)) //Samples per buffer
+#define A_SPB (DIV2(A_BPB)) //Samples per buffer
 
 #define DTOH(val) (((val) < 10) ? ((val) + '0') : ((val) + '7'))
 #define ITOA2(val, buff)\

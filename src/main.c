@@ -5,7 +5,7 @@
 static WAVEFORMATEX soundFormat;
 static HWAVEOUT hWaveOut;
 static WAVEHDR outputHeader1, outputHeader2;
-static LRSample buff1[S_SPB], buff2[S_SPB];
+static LRSample buff1[A_SPB], buff2[A_SPB];
 
 void hangThread() {
     SuspendThread(GetCurrentThread());
@@ -33,7 +33,7 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
     //space_debris | occ_san_geen | fairlight | hymn_to_aurora
     initConsole();
-    loadSong(L"C:\\occ_san_geen.mod");
+    loadSong(L"C:\\fairlight.mod");
 
     soundFormat.wFormatTag = WAVE_FORMAT_PCM;
     soundFormat.nChannels = 2;

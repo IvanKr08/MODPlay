@@ -114,7 +114,6 @@ void loadSong(wstr fileName) {
                 note->sample   |= ((rawNote & 0b00000000000000001111000000000000) >> 12);
                 note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
                 note->effectArg = ((rawNote & 0b00000000000000000000000011111111) >> 0);
-
                 //printRow();
                 //Print note
                 //cstr noteName = "...";
@@ -143,7 +142,7 @@ void loadSong(wstr fileName) {
             readFile(file, song.samples[i].length, song.samples[i].data);
 
             //Signed -> unsigned sample conversion.
-            for (size_t j = 0; j < song.samples[i].length; j++) song.samples[i].data[j] -= 128;
+            for (size_t j = 0; j < song.samples[i].length; j++) song.samples[i].data[j] ^= 128;
 
             printFormat("Sample \"%-22s\" of size %-6i has been loaded.\n", 2, song.samples[i].name, song.samples[i].length);
         }
@@ -161,49 +160,51 @@ void loadSong(wstr fileName) {
 // uint32 intg = channel->progress & 0x7FFFC000;
 // uint16 step = MUL16K(srcSR) / A_SR;
 // uint16 srcIndex = ((channel->progress & 0x00003FFF) < 8192) ? DIV16K(channel->progress) : DIV16K(channel->progress) + 1;
-//
-//
-//
-//
-//
-//
-
 
 void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* channel) {
     uint32 i = 0;
     if (!channel->playing) goto lExit;
+    uint32 step = MUL64K(srcSR) / A_SR;
 
-    uint32 step = MUL64K(srcSR) / A_SR;;
-    for (i = 0; i < renderCount; i++) {
+    for (; i < renderCount; i++) {
         //If srcSize == 65535, this may lead in overflow...
-        uint16 shift = ((channel->progress & 65535) < 32767) ? DIV64K(channel->progress) : DIV64K(channel->progress) + 1; 
-        if (shift >= srcSize) {
+        uint16 index = ((channel->progress & 65535) < 32767) ? DIV64K(channel->progress) : DIV64K(channel->progress) + 1; 
+        if (index >= srcSize) {
             channel->playing = 0;
             goto lExit;
         }
-        else buff[i] = src[shift];
+        else buff[i] = src[index] * channel->volume / 64;//((uint8)((src[index] ^ 128) * (channel->volume / 64.0))) ^ 128;
         channel->progress += step;
     }
 
 lExit:
-    for (; i < renderCount; i++) buff[i] = 128;
-    return;
+    for (; i < renderCount; i++) buff[i] = 128 * channel->volume / 64;
 }
 
 Note getNote(uint8 channel) {
     return song.patterns[song.pattern][MUL4(song.row) + channel];
 }
 
+void loopSong() {
+    song.tempo = 125;
+    song.ticksRow = 7;
+    song.ticksPerSecond = MUL2(song.tempo) / 5;
+    song.position = 0;
+    song.pattern = song.positions[0];
+    for (size_t i = 0; i < 4; i++) song.channels[i].volume = 64;
+}
+
 void update() {
+    //Update row and position
     if (song.row >= 64) {
         song.row = 0;
         song.position++;
-        if (song.position >= song.positionCount) song.position = 0;
+        if (song.position >= song.positionCount) loopSong();
         song.pattern = song.positions[song.position];
         printFormat("Pattern: %3i, position: %3i\n", 2, song.pattern, song.position);
     }
 
-    //Update channels
+    //Update notes
     for (size_t i = 0; i < 4; i++) {
         Note note = getNote(i);
         if (note.sample != 0 || note.period != 0) {
@@ -211,6 +212,15 @@ void update() {
             song.channels[i].playing = 1;
             if (note.sample != 0) song.channels[i].note.sample = note.sample;
             if (note.period != 0) song.channels[i].note.period = note.period;
+        }
+        if (note.effect == 0xC) {
+            song.channels[i].volume = (note.effectArg > 64) ? 64 : note.effectArg;
+        }
+        else if (note.sample != 0) {
+            song.channels[i].volume = song.samples[note.sample].volume;
+        }
+        if (note.effect == 0xF && note.effectArg < 32) {
+            song.ticksRow = note.effectArg;
         }
     }
 }
@@ -230,49 +240,75 @@ void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
 
 void fillBuffer(LRSample* buff, HWAVEOUT h) {
     static uint32 clck = 0, init = 0;
-    uint8 buffl[S_SPB] = { 0 }, buffr[S_SPB] = {0};
-
-    //while
+    uint8 buffl[A_SPB] = { 0 }, buffr[A_SPB] = {0}, buffl2[A_SPB] = { 0 }, buffr2[A_SPB] = { 0 };
 
     if (!init) {
-        printS("Starting playback...\n");
+        song.tempo = 125;
+        song.ticksRow = 6;
+        song.ticksPerSecond = MUL2(song.tempo) / 5;
         song.pattern = song.positions[0];
-        update();
+        for (size_t i = 0; i < 4; i++) song.channels[i].volume = 64;
 
-        printRow();
-
+        printS("Starting playback...\n");
+        //update();
+        //printRow();
         init = 1;
     }
 
-    clck++;
-    if (!(clck % 4)) {
-        song.row++;
-        update();
-        
-        printRow();
-    }
+    for (uint32 i = 0; i < A_SPB;) {
+        uint32 bpt = (A_SR / song.ticksPerSecond); //Bytes per tick
+        //Остаточный размер MME буфера (Отрендерить до конца) || Сколько осталось отрендерить до конца такта
+        uint32 maxToRender = min(A_SPB - i, bpt - song.alreadyRendered);
 
-    renderChannel(0, buffl, S_SPB);
-    renderChannel(1, buffr, S_SPB);
-    for (size_t i = 0; i < S_SPB; i++)
-    {
-        buff[i].l = buffl[i] / 2 * 2;
-        //buff[i].r = buffr[i] / 2;
+        renderChannel(0, buffl + i, maxToRender);
+        renderChannel(1, buffr + i, maxToRender);
+        renderChannel(2, buffr2 + i, maxToRender);
+        renderChannel(3, buffl2 + i, maxToRender);
+
+        i += maxToRender;
+        song.alreadyRendered += maxToRender;
+
+        if (song.alreadyRendered > bpt) MessageBoxA(0, "song.bytesPerTick < song.alreadyRendered!", "ERROR!", MB_ICONERROR);
+        else if (song.alreadyRendered == bpt) {
+            if (!(song.ticker % song.ticksRow)) {
+                update();
+                //printRow();
+                song.row++;
+            }
+            song.alreadyRendered = 0;
+            song.ticker++;
+        }
     }
-    renderChannel(3, buffl, S_SPB);
-    renderChannel(2, buffr, S_SPB);
-    for (size_t i = 0; i < S_SPB; i++)
+    for (size_t i = 0; i < A_SPB; i++)
     {
-        //buff[i].l += buffl[i] / 2;
-        //buff[i].r += buffr[i] / 2;
+        buff[i].l = DIV2(buffl[i]) + DIV2(buffl2[i]);
+        buff[i].r = DIV2(buffr[i]) + DIV2(buffr2[i]);
+        //buff[i].l = (buffl[i]);
+        //buff[i].r = (buffr2[i]);
     }
 
     return;
-    for (size_t i = 0; i < S_SPB; i++)
+    for (size_t i = 0; i < A_SPB; i++)
     {
         uint8 tmp = (buff[i].l * 0.15) + buff[i].r * 0.85;
         uint8 tmp2 = (buff[i].r * 0.15) + buff[i].l * 0.85;
         buff[i].l = tmp2;
         buff[i].r = tmp;
     }
+
+    for (size_t i = 0; i < A_SPB; i++)
+    {
+        buff[i].l = buffl[i] / 2;
+        buff[i].r = buffr[i] / 2;
+    }
+    for (size_t i = 0; i < A_SPB; i++)
+    {
+        buff[i].l += buffl[i] / 2;
+        buff[i].r += buffr[i] / 2;
+    }
+
+    return;
 }
+
+//printFormat("NextRow %i\n", 1, song.ticker / 6);
+//printFormat("NextTick %i\n", 1, song.ticker);
