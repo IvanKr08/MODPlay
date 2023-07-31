@@ -161,6 +161,7 @@ void loadSong(wstr fileName) {
 // uint16 step = MUL16K(srcSR) / A_SR;
 // uint16 srcIndex = ((channel->progress & 0x00003FFF) < 8192) ? DIV16K(channel->progress) : DIV16K(channel->progress) + 1;
 
+//#define ADDSAT8(val1, val2) ((val1) + (val2) > 127 ? 127)
 void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* channel) {
     uint32 i = 0;
     if (!channel->playing) goto lExit;
@@ -173,12 +174,12 @@ void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint3
             channel->playing = 0;
             goto lExit;
         }
-        else buff[i] = src[index] * channel->volume / 64;//((uint8)((src[index] ^ 128) * (channel->volume / 64.0))) ^ 128;
+        else buff[i] = ((uint8)(((int8)(src[index] - 128)) * (channel->volume) / 64) + 128);
         channel->progress += step;
     }
 
 lExit:
-    for (; i < renderCount; i++) buff[i] = 128 * channel->volume / 64;
+    for (; i < renderCount; i++) buff[i] = 128;
 }
 
 Note getNote(uint8 channel) {
@@ -186,7 +187,7 @@ Note getNote(uint8 channel) {
 }
 
 void loopSong() {
-    song.tempo = 125;
+    song.tempo = 12;
     song.ticksRow = 7;
     song.ticksPerSecond = MUL2(song.tempo) / 5;
     song.position = 0;
@@ -272,7 +273,7 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
         else if (song.alreadyRendered == bpt) {
             if (!(song.ticker % song.ticksRow)) {
                 update();
-                //printRow();
+                printRow();
                 song.row++;
             }
             song.alreadyRendered = 0;

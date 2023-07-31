@@ -105,9 +105,12 @@ void printRow() {
     coord.X = 9;
 
     for (size_t i = 0; i < 4; i++) {
+        //uint32 c = ((getNote(i).sample % 10) + 1);
         FillConsoleOutputAttribute(stdo, getNote(i).sample % 8, 1, coord, &tmp);
+        //FillConsoleOutputAttribute(stdo, c ^ FOREGROUND_INTENSITY, 1, coord, &tmp);
         coord.X++;
         FillConsoleOutputAttribute(stdo, (getNote(i).sample % 8) | FOREGROUND_INTENSITY, 1, coord, &tmp);
+        //FillConsoleOutputAttribute(stdo, c, 1, coord, &tmp);
         coord.X += 13;
     }
 
