@@ -20,15 +20,19 @@ typedef wchar_t* wstr;
 
 void hangThread();
 
-#define DIV2(val) (val >> 1)
-#define DIV4(val) (val >> 2)
-#define DIV8(val) (val >> 3)
-#define DIV16(val) (val >> 4)
+#define DIV2(val) ((val) >> 1)
+#define DIV4(val) ((val) >> 2)
+#define DIV8(val) ((val) >> 3)
+#define DIV16(val) ((val) >> 4)
+#define DIV16K(val) ((val) >> 14)
+#define DIV64K(val) ((val) >> 16)
 
-#define MUL2(val) (val << 1)
-#define MUL4(val) (val << 2)
-#define MUL8(val) (val << 3)
-#define MUL16(val) (val << 4)
+#define MUL2(val) ((val) << 1)
+#define MUL4(val) ((val) << 2)
+#define MUL8(val) ((val) << 3)
+#define MUL16(val) ((val) << 4)
+#define MUL16K(val) ((val) << 14)
+#define MUL64K(val) ((val) << 16)
 
 #define A_SR  44100         //SampleRate (11025 | 22050 | 44100)
 #define A_BPB (4410)        //Bytes per buffer

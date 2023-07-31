@@ -26,23 +26,31 @@ typedef struct {
 } InstrSample;
 
 typedef struct {
-    int32 progress;
+    uint32 progress;
+    bool playing;
     Note note;
 } Channel;
 
 typedef struct {
-    Pattern*    patterns;       //Patterns
-    InstrSample samples[32];    //Samples
-    uint8       positions[128]; //Song map
     uint8       name[21];       //Song name
     uint8       magic[5];       //File format
-    uint8       positionCount;  //Count of used positions
-    //===
-    Channel     channels[4];    //Channels data
+
+    Pattern*    patterns;       //Patterns array
     uint8       patternCount;   //Count of patterns
-    uint8       position;       //Position in song map
     uint8       pattern;        //Current pattern
+
+    uint8       positions[128]; //Song map
+    uint8       positionCount;  //Song length
+    uint8       position;       //Position in song map (Song progress)
+
+    InstrSample samples[32];    //Samples
+
+    Channel     channels[4];    //Channels data
+
     uint8       row;            //Position in pattern
+    uint32      leftToMix;      //How much is left to mix
+    uint32      tempo;          //Current ticks per second
+    uint32      ticksPerRow;    //Current ticks per row
 } Song;
 
 extern Song song;

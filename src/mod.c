@@ -155,31 +155,39 @@ void loadSong(wstr fileName) {
 
 //=== Play
 
-void resample(uint8* src, uint32 srcSize, uint8* dst, uint32 dstSize, uint32 from, int32* progress) {
-    uint32 to = A_SR, resampledSize = 0, shift = 0;
-    float  step = 0, width = 0, pos = 0;
+//===Unfinished 128K Samples version
+// 
+// uint16 frac = channel->progress & 0x00003FFF;
+// uint32 intg = channel->progress & 0x7FFFC000;
+// uint16 step = MUL16K(srcSR) / A_SR;
+// uint16 srcIndex = ((channel->progress & 0x00003FFF) < 8192) ? DIV16K(channel->progress) : DIV16K(channel->progress) + 1;
+//
+//
+//
+//
+//
+//
 
-    if (*progress < 0) {
-        memset(dst, 128, dstSize);
-        return;
-    }
 
-    width = (float)to / from;
-    step = (float)from / to;
-    resampledSize = srcSize * width;
-    pos = *progress;
+void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* channel) {
+    uint32 i = 0;
+    if (!channel->playing) goto lExit;
 
-    for (uint32 i = 0; i < dstSize; i++) {
-        shift = (uint32)roundf(pos);
+    uint32 step = MUL64K(srcSR) / A_SR;;
+    for (i = 0; i < renderCount; i++) {
+        //If srcSize == 65535, this may lead in overflow...
+        uint16 shift = ((channel->progress & 65535) < 32767) ? DIV64K(channel->progress) : DIV64K(channel->progress) + 1; 
         if (shift >= srcSize) {
-            dst[i] = 128;
+            channel->playing = 0;
+            goto lExit;
         }
-        else dst[i] = src[shift];
-        pos += step;
+        else buff[i] = src[shift];
+        channel->progress += step;
     }
 
-    if (roundf(pos) >= resampledSize) *progress = -1; //Last buffer
-    else *progress = roundf(pos);
+lExit:
+    for (; i < renderCount; i++) buff[i] = 128;
+    return;
 }
 
 Note getNote(uint8 channel) {
@@ -200,6 +208,7 @@ void update() {
         Note note = getNote(i);
         if (note.sample != 0 || note.period != 0) {
             song.channels[i].progress = 0;
+            song.channels[i].playing = 1;
             if (note.sample != 0) song.channels[i].note.sample = note.sample;
             if (note.period != 0) song.channels[i].note.period = note.period;
         }
@@ -215,13 +224,15 @@ void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
         buff,
         buffSize,
         (7093789.2 / (2 * note.period)),
-        &song.channels[channel].progress
+        &song.channels[channel]
     );
 }
 
 void fillBuffer(LRSample* buff, HWAVEOUT h) {
-    static uint32 clck = 0, pattern = 0, init = 0;
+    static uint32 clck = 0, init = 0;
     uint8 buffl[S_SPB] = { 0 }, buffr[S_SPB] = {0};
+
+    //while
 
     if (!init) {
         printS("Starting playback...\n");
@@ -234,7 +245,7 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
     }
 
     clck++;
-    if (!(clck % 1)) {
+    if (!(clck % 4)) {
         song.row++;
         update();
         
@@ -245,15 +256,15 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
     renderChannel(1, buffr, S_SPB);
     for (size_t i = 0; i < S_SPB; i++)
     {
-        buff[i].l = buffl[i] / 2;
-        buff[i].r = buffr[i] / 2;
+        buff[i].l = buffl[i] / 2 * 2;
+        //buff[i].r = buffr[i] / 2;
     }
     renderChannel(3, buffl, S_SPB);
     renderChannel(2, buffr, S_SPB);
     for (size_t i = 0; i < S_SPB; i++)
     {
-        buff[i].l += buffl[i] / 2;
-        buff[i].r += buffr[i] / 2;
+        //buff[i].l += buffl[i] / 2;
+        //buff[i].r += buffr[i] / 2;
     }
 
     return;
