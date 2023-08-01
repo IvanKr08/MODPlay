@@ -1,5 +1,7 @@
 #pragma once
 #include "utils.h"
+#include "mod.h"
+#include "tables.h"
 
 void initConsole();
 

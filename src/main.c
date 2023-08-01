@@ -13,10 +13,10 @@ void hangThread() {
 
 void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-
+    WAVEHDR* hdr = param1;
     if (uMsg == WOM_DONE) {
         static int outputBufferIndex;
-
+        
         if (outputBufferIndex == 1) {
             outputBufferIndex = 2;
             waveOutWrite(hWO, &outputHeader2, sizeof(WAVEHDR));
@@ -32,6 +32,13 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
     //space_debris | occ_san_geen | fairlight | hymn_to_aurora
+    for (uint32 i = 0; i < A_SPB; i++) {
+        buff1[i].l = 128;
+        buff2[i].r = 128;
+        buff1[i].r = 128;
+        buff2[i].l = 128;
+    }
+
     initConsole();
     loadSong(L"C:\\occ_san_geen.mod");
 
@@ -44,11 +51,11 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
     outputHeader1.dwBufferLength = A_BPB;
     outputHeader1.lpData = buff1;
-    outputHeader1.dwUser = &outputHeader2;
+    outputHeader1.dwUser = 1;
 
     outputHeader2.dwBufferLength = A_BPB;
     outputHeader2.lpData = buff2;
-    outputHeader1.dwUser = &outputHeader1;
+    outputHeader1.dwUser = 0;
 
     waveOutOpen(&hWaveOut, WAVE_MAPPER, &soundFormat, waveOutProc, 0, CALLBACK_FUNCTION);
 

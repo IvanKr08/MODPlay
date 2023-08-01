@@ -1,11 +1,8 @@
-#include "utils.h"
-#include "console.h"
-#include "tables.h"
 #include "mod.h"
 
-//=== Load file
-
 Song song;
+
+//=== Load file ===//
 
 static void readFile(HANDLE file, uint32 count, void* buff) {
     BOOL readResult = ReadFile(file, buff, count, 0, 0);
@@ -114,6 +111,7 @@ void loadSong(wstr fileName) {
                 note->sample   |= ((rawNote & 0b00000000000000001111000000000000) >> 12);
                 note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
                 note->effectArg = ((rawNote & 0b00000000000000000000000011111111) >> 0);
+
                 //printRow();
                 //Print note
                 //cstr noteName = "...";
@@ -152,16 +150,10 @@ void loadSong(wstr fileName) {
     CloseHandle(file);
 }
 
-//=== Play
+//===
 
-//===Unfinished 128K Samples version
-// 
-// uint16 frac = channel->progress & 0x00003FFF;
-// uint32 intg = channel->progress & 0x7FFFC000;
-// uint16 step = MUL16K(srcSR) / A_SR;
-// uint16 srcIndex = ((channel->progress & 0x00003FFF) < 8192) ? DIV16K(channel->progress) : DIV16K(channel->progress) + 1;
+//=== Play ===//
 
-//#define ADDSAT8(val1, val2) ((val1) + (val2) > 127 ? 127)
 void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* channel) {
     uint32 i = 0;
     if (!channel->playing) goto lExit;
@@ -182,17 +174,37 @@ lExit:
     for (; i < renderCount; i++) buff[i] = 128;
 }
 
+InstrSample *getSample(uint8 sample) {
+    return (sample < 32) ? (&song.samples[sample]) : (&song.samples[0]);
+}
 Note getNote(uint8 channel) {
     return song.patterns[song.pattern][MUL4(song.row) + channel];
 }
+Channel *getChannel(uint8 channel) {
+    return &song.channels[channel & 3];
+}
 
 void loopSong() {
-    song.tempo = 12;
-    song.ticksRow = 7;
-    song.ticksPerSecond = MUL2(song.tempo) / 5;
     song.position = 0;
-    song.pattern = song.positions[0];
-    for (size_t i = 0; i < 4; i++) song.channels[i].volume = 64;
+}
+
+void processChannel(uint8 channel) {
+    Note newNote = getNote(channel);
+    Channel* chan = getChannel(channel);
+
+    if (newNote.sample != 0 || newNote.period != 0) {
+        chan->progress = 0;
+        chan->playing = 1;
+        if (newNote.sample != 0) {
+            chan->note.sample = newNote.sample;
+            chan->volume = getSample(newNote.sample)->volume;
+        }
+        if (newNote.period != 0) {
+            chan->note.period = newNote.period;
+        }
+    }
+
+    processRowFX(channel);
 }
 
 void update() {
@@ -205,33 +217,16 @@ void update() {
         printFormat("Pattern: %3i, position: %3i\n", 2, song.pattern, song.position);
     }
 
-    //Update notes
-    for (size_t i = 0; i < 4; i++) {
-        Note note = getNote(i);
-        if (note.sample != 0 || note.period != 0) {
-            song.channels[i].progress = 0;
-            song.channels[i].playing = 1;
-            if (note.sample != 0) song.channels[i].note.sample = note.sample;
-            if (note.period != 0) song.channels[i].note.period = note.period;
-        }
-        if (note.effect == 0xC) {
-            song.channels[i].volume = (note.effectArg > 64) ? 64 : note.effectArg;
-        }
-        else if (note.sample != 0) {
-            song.channels[i].volume = song.samples[note.sample].volume;
-        }
-        if (note.effect == 0xF && note.effectArg < 32) {
-            song.ticksRow = note.effectArg;
-        }
-    }
+    //Update channels
+    for (size_t i = 0; i < 4; i++) processChannel(i);
 }
 
 void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
     Note note = song.channels[channel].note;
 
     resample(
-        song.samples[note.sample].data,
-        song.samples[note.sample].length,
+        getSample(note.sample)->data,
+        getSample(note.sample)->length,
         buff,
         buffSize,
         (7093789.2 / (2 * note.period)),
@@ -241,25 +236,23 @@ void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
 
 void fillBuffer(LRSample* buff, HWAVEOUT h) {
     static uint32 clck = 0, init = 0;
-    uint8 buffl[A_SPB] = { 0 }, buffr[A_SPB] = {0}, buffl2[A_SPB] = { 0 }, buffr2[A_SPB] = { 0 };
+    uint8 buffl[A_SPB] = { 128 }, buffr[A_SPB] = {128}, buffl2[A_SPB] = { 128 }, buffr2[A_SPB] = { 128 };
 
     if (!init) {
         song.tempo = 125;
-        song.ticksRow = 6;
-        song.ticksPerSecond = MUL2(song.tempo) / 5;
+        song.tpr = 6;
+        song.tps = MUL2(song.tempo) / 5;
         song.pattern = song.positions[0];
         for (size_t i = 0; i < 4; i++) song.channels[i].volume = 64;
 
         printS("Starting playback...\n");
-        //update();
-        //printRow();
         init = 1;
     }
 
     for (uint32 i = 0; i < A_SPB;) {
-        uint32 bpt = (A_SR / song.ticksPerSecond); //Bytes per tick
+        uint32 bpt = (A_SR / song.tps); //Bytes per tick
         //Остаточный размер MME буфера (Отрендерить до конца) || Сколько осталось отрендерить до конца такта
-        uint32 maxToRender = min(A_SPB - i, bpt - song.alreadyRendered);
+        uint32 maxToRender = min(A_SPB - i, bpt - song.tickRenderCount);
 
         renderChannel(0, buffl + i, maxToRender);
         renderChannel(1, buffr + i, maxToRender);
@@ -267,49 +260,64 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
         renderChannel(3, buffl2 + i, maxToRender);
 
         i += maxToRender;
-        song.alreadyRendered += maxToRender;
+        song.tickRenderCount += maxToRender;
 
-        if (song.alreadyRendered > bpt) MessageBoxA(0, "song.bytesPerTick < song.alreadyRendered!", "ERROR!", MB_ICONERROR);
-        else if (song.alreadyRendered == bpt) {
-            if (!(song.ticker % song.ticksRow)) {
+        if (song.tickRenderCount > bpt) MessageBoxA(0, "song.bytesPerTick < song.alreadyRendered!", "ERROR!", MB_ICONERROR);
+        else if (song.tickRenderCount == bpt) {
+            if (!(song.ticker % song.tpr)) {
                 update();
                 printRow();
                 song.row++;
             }
-            song.alreadyRendered = 0;
+            song.tickRenderCount = 0;
             song.ticker++;
         }
     }
-    for (size_t i = 0; i < A_SPB; i++)
-    {
-        buff[i].l = DIV2(buffl[i]) + DIV2(buffl2[i]);
-        buff[i].r = DIV2(buffr[i]) + DIV2(buffr2[i]);
-        //buff[i].l = (buffl[i]);
-        //buff[i].r = (buffr2[i]);
-    }
 
-    return;
+    float stereoMix = 0.20;
     for (size_t i = 0; i < A_SPB; i++)
     {
-        uint8 tmp = (buff[i].l * 0.15) + buff[i].r * 0.85;
-        uint8 tmp2 = (buff[i].r * 0.15) + buff[i].l * 0.85;
-        buff[i].l = tmp2;
-        buff[i].r = tmp;
+        buff[i].l = (((buffl[i] + buffl2[i]) * (1 - stereoMix))
+                   + ((buffr[i] + buffr2[i]) * (stereoMix))) / 2;
+        buff[i].r = (((buffl[i] + buffl2[i]) * (stereoMix))
+                   + ((buffr[i] + buffr2[i]) * (1 - stereoMix))) / 2;
     }
-
-    for (size_t i = 0; i < A_SPB; i++)
-    {
-        buff[i].l = buffl[i] / 2;
-        buff[i].r = buffr[i] / 2;
-    }
-    for (size_t i = 0; i < A_SPB; i++)
-    {
-        buff[i].l += buffl[i] / 2;
-        buff[i].r += buffr[i] / 2;
-    }
-
-    return;
 }
 
+//buff[i].l = DIV2(buffl[i]) + DIV2(buffl2[i]);
+//buff[i].r = DIV2(buffr[i]) + DIV2(buffr2[i]);
+//update();
+//printRow();
+//buff[i].l = (buffl[i]);
+//buff[i].r = (buffr2[i]);
 //printFormat("NextRow %i\n", 1, song.ticker / 6);
 //printFormat("NextTick %i\n", 1, song.ticker);
+
+    //return;
+    //for (size_t i = 0; i < A_SPB; i++)
+    //{
+    //    uint8 tmp = (buff[i].l * 0.15) + buff[i].r * 0.85;
+    //    uint8 tmp2 = (buff[i].r * 0.15) + buff[i].l * 0.85;
+    //    buff[i].l = tmp2;
+    //    buff[i].r = tmp;
+    //}
+
+    //for (size_t i = 0; i < A_SPB; i++)
+    //{
+    //    buff[i].l = buffl[i] / 2;
+    //    buff[i].r = buffr[i] / 2;
+    //}
+    //for (size_t i = 0; i < A_SPB; i++)
+    //{
+    //    buff[i].l += buffl[i] / 2;
+    //    buff[i].r += buffr[i] / 2;
+    //}
+
+    //return;
+
+//===Unfinished 128K Samples version
+// 
+// uint16 frac = channel->progress & 0x00003FFF;
+// uint32 intg = channel->progress & 0x7FFFC000;
+// uint16 step = MUL16K(srcSR) / A_SR;
+// uint16 srcIndex = ((channel->progress & 0x00003FFF) < 8192) ? DIV16K(channel->progress) : DIV16K(channel->progress) + 1;

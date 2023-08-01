@@ -141,12 +141,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\console.c" />
+    <ClCompile Include="src\fx.c" />
     <ClCompile Include="src\main.c" />
     <ClCompile Include="src\mod.c" />
     <ClCompile Include="src\tables.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\console.h" />
+    <ClInclude Include="include\fx.h" />
     <ClInclude Include="include\mod.h" />
     <ClInclude Include="include\tables.h" />
     <ClInclude Include="include\utils.h" />
