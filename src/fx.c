@@ -46,7 +46,8 @@ void processRowFX(uint8 channel) {
         break;
     }
     case 0x9: {
-
+        if (newNote.effectArg != 0) chan->progress = MUL64K(MUL256(newNote.effectArg));
+        else chan->progress = MUL64K(MUL256(chan->lastOffset));
         break;
     }
     case 0xA: {

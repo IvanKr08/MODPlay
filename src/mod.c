@@ -45,11 +45,11 @@ void loadSong(wstr fileName) {
     //Sample headers
     for (size_t i = 1; i < 32; i++) {
         readFile(file, 22, song.samples[i].name);
-        song.samples[i].length      = readWord(file) << 1;
+        song.samples[i].length      = MUL2(readWord(file));
         song.samples[i].finetune    = readByte(file);
         song.samples[i].volume      = readByte(file);
-        readWord(file);
-        readWord(file);
+        song.samples[i].repeatStart = MUL2(readWord(file));
+        song.samples[i].repeatEnd   = MUL2(readWord(file));
     }
 
     //Song length in patterns
@@ -67,7 +67,16 @@ void loadSong(wstr fileName) {
     //Print song info
     printFormat("Handle: %i.\nSize: %i.\nSong: \"%s\".\nSamples:\n", 3, file, fileSize, song.name);
     for (size_t i = 1; i < 32; i++) {
-        printFormat("| Name: %-22s | Size in bytes: %-6i | Finetune: %-1X | Volume: %-2i |\n", 4, song.samples[i].name, song.samples[i].length, song.samples[i].finetune, song.samples[i].volume);
+        printFormat("%0-2i | Name: %-22s | Size in bytes: %-6i |\n%-2i | Finetune: %-1X | Volume: %-2i | Repeat start: %-6i | Repeat end: %-6i |\n\n", 5,
+            i,
+            song.samples[i].name,
+            song.samples[i].length,
+            i,
+            song.samples[i].finetune,
+            song.samples[i].volume,
+            song.samples[i].repeatStart,
+            song.samples[i].repeatEnd
+        );
     }
     printC('\n');
 
@@ -154,20 +163,29 @@ void loadSong(wstr fileName) {
 
 //=== Play ===//
 
-void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* channel) {
+void resample(uint8* src, uint32 srcSize, uint8* buff, uint32 renderCount, uint32 srcSR, Channel* chan) {
     uint32 i = 0;
-    if (!channel->playing) goto lExit;
+    InstrSample *sample = getSample(chan->note.sample);
     uint32 step = MUL64K(srcSR) / A_SR;
+    if (!chan->playing) goto lExit;
+
+    if (sample->repeatEnd > 2) srcSize = sample->repeatEnd;
 
     for (; i < renderCount; i++) {
         //If srcSize == 65535, this may lead in overflow...
-        uint16 index = ((channel->progress & 65535) < 32767) ? DIV64K(channel->progress) : DIV64K(channel->progress) + 1; 
+        uint16 index = ((chan->progress & 65535) < 32767) ? DIV64K(chan->progress) : DIV64K(chan->progress) + 1; 
         if (index >= srcSize) {
-            channel->playing = 0;
-            goto lExit;
+            if (sample->repeatEnd > 2) {
+                chan->progress = MUL64K(sample->repeatStart);
+                index = 0;
+            }
+            else {
+                chan->playing = 0;
+                goto lExit;
+            }
         }
-        else buff[i] = ((uint8)(((int8)(src[index] - 128)) * (channel->volume) / 64) + 128);
-        channel->progress += step;
+        buff[i] = ((uint8)(((int8)(src[index] - 128)) * (chan->volume) / 64) + 128);
+        chan->progress += step;
     }
 
 lExit:
@@ -274,6 +292,10 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
         }
     }
 
+    for (size_t i = 0; i < A_SPB; i++)
+    {
+        buff[i].l = buffl2[i] ;
+    } //return;
     float stereoMix = 0.20;
     for (size_t i = 0; i < A_SPB; i++)
     {

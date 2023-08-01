@@ -31,7 +31,7 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
 }
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
-    //space_debris | occ_san_geen | fairlight | hymn_to_aurora
+    //space_debris | occ_san_geen | fairlight | hymn_to_aurora | beyond_music
     for (uint32 i = 0; i < A_SPB; i++) {
         buff1[i].l = 128;
         buff2[i].r = 128;
@@ -40,7 +40,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     }
 
     initConsole();
-    loadSong(L"C:\\occ_san_geen.mod");
+    loadSong(L"C:\\fairlight.mod");
 
     soundFormat.wFormatTag = WAVE_FORMAT_PCM;
     soundFormat.nChannels = 2;

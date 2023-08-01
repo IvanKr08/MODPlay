@@ -12,6 +12,8 @@ typedef struct {
 
 typedef struct {
     uint32 length;
+    uint32 repeatStart;
+    uint32 repeatEnd;
     uint8* data;
     uint8  name[23];
     uint8  finetune;
@@ -20,7 +22,7 @@ typedef struct {
 } InstrSample;
 
 typedef struct {
-    uint8 sample;
+    uint8  sample;
     uint16 period;
     uint8  effect;
     uint8  effectArg;
@@ -29,12 +31,15 @@ typedef struct {
 typedef Note Pattern[256];
 
 typedef struct {
-    uint32       progress;    //Sample progress (X << 16)
-    uint8        volume;      //Channel volume
-    InstrSample* sample;      //Pointer to the current sample
-    InstrSample* nextSample;  //Pointer to the next sample (Used when sample specified without a note)
+    //Playback
     bool         playing;     //Playing state
-    Note note;
+    bool         repeating;   //
+    uint32       progress;    //Sample progress (X << 16)
+    Note         note;        //*Replace this later
+
+    //FX
+    uint8        volume;      //Channel volume
+    uint8        lastOffset;  //For 9-XX Effect
 } Channel;
 
 typedef struct {
@@ -76,3 +81,6 @@ Channel*     getChannel(uint8 channel);
 
 void         fillBuffer(LRSample* buff, HWAVEOUT h);
 void         loadSong(wstr fileName);
+
+//InstrSample* sample;      //Pointer to the current sample
+//InstrSample* nextSample;  //Pointer to the next sample (Used when sample specified without a note)
