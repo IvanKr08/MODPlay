@@ -5,8 +5,8 @@
 
 #pragma pack(push, 1)
 typedef struct {
-    uint8 l;
-    uint8 r;
+    int8 l;
+    int8 r;
 } LRSample;
 #pragma pack(pop)
 
@@ -14,7 +14,7 @@ typedef struct {
     uint32 length;
     uint32 repeatStart;
     uint32 repeatEnd;
-    uint8* data;
+    int8*  data;
     uint8  name[23];
     uint8  finetune;
     uint8  volume;
@@ -40,6 +40,7 @@ typedef struct {
     //FX
     uint8        volume;      //Channel volume
     uint8        lastOffset;  //For 9-XX Effect
+    Note        lastEffect;
 } Channel;
 
 typedef struct {

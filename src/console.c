@@ -34,19 +34,44 @@ void printFormat(cstr format, uint32 count, ...) {
     printS(string);
 }
 
+//===
+
+static uint32 colors[] = {
+    FOREGROUND_RED,
+    FOREGROUND_GREEN,
+    FOREGROUND_BLUE,
+    FOREGROUND_GREEN | FOREGROUND_BLUE,
+    FOREGROUND_GREEN | FOREGROUND_RED,
+    FOREGROUND_RED | FOREGROUND_BLUE,
+    FOREGROUND_RED | FOREGROUND_INTENSITY,
+    FOREGROUND_GREEN | FOREGROUND_INTENSITY,
+    FOREGROUND_BLUE | FOREGROUND_INTENSITY,
+    FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
+    FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_INTENSITY,
+    FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
+    FOREGROUND_RED,
+    FOREGROUND_GREEN,
+    FOREGROUND_BLUE,
+    FOREGROUND_GREEN | FOREGROUND_BLUE,
+};
+static char hex[] = "0123456789ABCDEF";
+
+static char printRowBuff[] = "?? | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! |\n";
 void printRow() {
-    char string[61];
+    if (song.row < 10) {
+        printRowBuff[0] = '0';
+        printRowBuff[1] = song.row + '0';
+    }
+    else {
+        printRowBuff[0] = (song.row / 10) + '0';
+        printRowBuff[1] = (song.row % 10) + '0';
+    }
 
-    ITOA2_ZERO(song.row, string);
-
-    string[2] = ' ';
-    string[3] = '|';
-
-    for (size_t i = 0; i < 4; i++) {
-        cstr base = string + 4 + (14 * i);
+    for (uint32 i = 0; i < 4; i++) {
+        cstr base = printRowBuff + 4 + (14 * i);
         Note note = getNote(i);
 
-        base[0] = ' ';
+        //Note
         if (note.period != 0) {
             for (int m = 0; m < 36; m++) {
                 if (note.period == tuning0[m]) {
@@ -63,72 +88,49 @@ void printRow() {
             base[2] = ' ';
             base[3] = ' ';
         }
-        base[4] = ' ';
 
+        //Sample
         if (note.sample == 0) {
             base[5] = ' ';
             base[6] = ' ';
         }
         else {
-            ITOA2(note.sample, base + 5);
+            if (note.sample < 10) {
+                base[5] = ' ';
+                base[6] = note.sample + '0';
+            }
+            else {
+                base[5] = (note.sample / 10) + '0';
+                base[6] = (note.sample % 10) + '0';
+            }
         }
 
-        base[7] = ' ';
+        //Effect
         if (note.effectArg != 0 && note.effect != 0) {
-            base[8] = DTOH(note.effect & 15);
-            base[9] = '-';
-            base[10] = DTOH(note.effectArg >> 4);
-            base[11] = DTOH(note.effectArg & 15);
+            base[8]  = hex[note.effect];
+            base[9]  = '-';
+            base[10] = hex[note.effectArg >> 4];
+            base[11] = hex[note.effectArg & 15];
         }
         else {
-            base[8] = ' ';
-            base[9] = ' ';
+            base[8]  = ' ';
+            base[9]  = ' ';
             base[10] = ' ';
             base[11] = ' ';
         }
-        base[12] = ' ';
-        base[13] = '|';
     }
-    string[60] = '\n';
-    WriteConsoleA(stdo, string, 61, 0, 0);
+    WriteConsoleA(stdo, printRowBuff, 61, 0, 0);
 
-
-
-    DWORD tmp;
-    COORD coord;
     CONSOLE_SCREEN_BUFFER_INFO info;
     GetConsoleScreenBufferInfo(stdo, &info);
-    coord.Y = info.dwCursorPosition.Y - 1;
-    coord.X = 9;
+    COORD coord = { .X = 9, .Y = info.dwCursorPosition.Y - 1 };
 
-    for (size_t i = 0; i < 4; i++) {
-        //uint32 c = ((getNote(i).sample % 10) + 1);
-        FillConsoleOutputAttribute(stdo, getNote(i).sample % 8, 1, coord, &tmp);
-        //FillConsoleOutputAttribute(stdo, c ^ FOREGROUND_INTENSITY, 1, coord, &tmp);
+    for (uint32 i = 0; i < 4; i++) {
+        DWORD tmp;
+        uint8 sample = getNote(i).sample;
+        FillConsoleOutputAttribute(stdo, colors[sample & 15] ^ FOREGROUND_INTENSITY, 1, coord, &tmp);
         coord.X++;
-        FillConsoleOutputAttribute(stdo, (getNote(i).sample % 8) | FOREGROUND_INTENSITY, 1, coord, &tmp);
-        //FillConsoleOutputAttribute(stdo, c, 1, coord, &tmp);
+        FillConsoleOutputAttribute(stdo, colors[sample & 15], 1, coord, &tmp);
         coord.X += 13;
-    }
-
-    return;
-    //Colorize
-    //DWORD tmp;
-    //COORD coord;
-    //CONSOLE_SCREEN_BUFFER_INFO info;
-    GetConsoleScreenBufferInfo(stdo, &info);
-    coord.Y = info.dwCursorPosition.Y - 1;
-    coord.X = 0;
-
-    //FillConsoleOutputAttribute(stdo, FOREGROUND_INTENSITY, 2, coord, &tmp);
-    coord.X = 5;
-    
-    for (size_t i = 0; i < 4; i++) {
-        FillConsoleOutputAttribute(stdo, FOREGROUND_BLUE | FOREGROUND_GREEN, 3, coord, &tmp);
-        coord.X += 4;
-        FillConsoleOutputAttribute(stdo, FOREGROUND_GREEN, 2, coord, &tmp);
-        coord.X += 3;
-        FillConsoleOutputAttribute(stdo, FOREGROUND_RED, 4, coord, &tmp);
-        coord.X += 7;
     }
 }

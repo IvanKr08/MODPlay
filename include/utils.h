@@ -24,6 +24,7 @@ void hangThread();
 #define DIV4(val) ((val) >> 2)
 #define DIV8(val) ((val) >> 3)
 #define DIV16(val) ((val) >> 4)
+#define DIV64(val) ((val) >> 6)
 #define DIV256(val) ((val) >> 8)
 #define DIV16K(val) ((val) >> 14)
 #define DIV32K(val) ((val) >> 15)
@@ -33,6 +34,7 @@ void hangThread();
 #define MUL4(val) ((val) << 2)
 #define MUL8(val) ((val) << 3)
 #define MUL16(val) ((val) << 4)
+#define MUL64(val) ((val) << 6)
 #define MUL256(val) ((val) << 8)
 #define MUL16K(val) ((val) << 14)
 #define MUL32K(val) ((val) << 15)
@@ -42,28 +44,3 @@ void hangThread();
 #define A_SR  (44100)       //SampleRate (11025 | 22050 | 44100)
 #define A_BPB (4410)        //Bytes per buffer
 #define A_SPB (DIV2(A_BPB)) //Samples per buffer
-
-//Digit to HEX char
-#define DTOH(val) (((val) < 10) ? ((val) + '0') : ((val) + '7'))
-//2-Digit ITOA (Space-align)
-#define ITOA2(val, buff) {\
-if ((val) < 10) {\
-    (buff)[0] = ' ';\
-    (buff)[1] = (val) + '0';\
-}\
-else {\
-(buff)[0] = ((val) / 10) + '0';\
-(buff)[1] = ((val) % 10) + '0';\
-}\
-}
-//2-Digit ITOA (Zero-align)
-#define ITOA2_ZERO(val, buff) {\
-if ((val) < 10) {\
-    (buff)[0] = '0';\
-    (buff)[1] = (val) + '0';\
-}\
-else {\
-(buff)[0] = ((val) / 10) + '0';\
-(buff)[1] = ((val) % 10) + '0';\
-}\
-}

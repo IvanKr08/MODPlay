@@ -1,7 +1,22 @@
 #include "fx.h"
 
 void processTickFX(uint8 channel) {
-    
+    Channel* chan = getChannel(channel);
+    Note newNote = chan->lastEffect;
+
+    if (newNote.effect == 0xA) {
+        if (newNote.effectArg > 0x0F) {
+            //printFormat("UP VOLUME %02X, FROM %i", 2, (newNote.effectArg >> 4), chan->volume);
+            if ((chan->volume + (newNote.effectArg >> 4)) <= 64) chan->volume += (newNote.effectArg >> 4);
+            //printFormat(" TO %i\n", 1, chan->volume);
+        }
+        else {
+            //printFormat("DOWN VOLUME %02X, FROM %i", 2, (newNote.effectArg), chan->volume);
+            if ((uint8)(chan->volume - newNote.effectArg) <= 64) chan->volume -= newNote.effectArg;
+            //printFormat(" TO %i\n", 1, chan->volume);
+        }
+    }
+    //if (chan->volume > 64) printFormat("VOLUME ERROR %02X!, %i\n", 2, newNote.effectArg, chan->volume);
 }
 
 void processRowFX(uint8 channel) {
@@ -71,9 +86,7 @@ void processRowFX(uint8 channel) {
         break;
     }
     case 0xF: {
-        if (newNote.effectArg < 32) {
-            song.tpr = newNote.effectArg;
-        }
+        if (newNote.effectArg < 32) song.tpr = newNote.effectArg;
         else song.tempo = newNote.effectArg;
         break;
     }

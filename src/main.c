@@ -31,7 +31,7 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
 }
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
-    //space_debris | occ_san_geen | fairlight | hymn_to_aurora | beyond_music
+    //space_debris | occ_san_geen | fairlight | hymn_to_aurora | beyond_music | ELYSIUM | GSLINGER
     for (uint32 i = 0; i < A_SPB; i++) {
         buff1[i].l = 128;
         buff2[i].r = 128;
@@ -40,7 +40,19 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
     }
 
     initConsole();
-    loadSong(L"C:\\fairlight.mod");
+	//for (size_t i = 0; i < 16; i++)
+	//{
+	//	for (size_t j = 0; j < 7; j++)
+	//	{
+	//		for (size_t n = 0; n < 12; n++)
+	//		{
+	//			printFormat("%5i, ", 1, periods[(i * 84) + n + (j * 12)] >> 4);
+	//		}
+	//		printC('\n');
+	//	}
+	//	printC('\n');
+	//}
+    loadSong(L"C:\\ELYSIUM.mod");
 
     soundFormat.wFormatTag = WAVE_FORMAT_PCM;
     soundFormat.nChannels = 2;
