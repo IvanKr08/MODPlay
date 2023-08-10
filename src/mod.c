@@ -44,25 +44,30 @@ void loadSong(wstr fileName) {
 
     //Sample headers
     for (uint32 i = 1; i < 32; i++) {
-        readFile(file, 22, song.samples[i].name);
-        song.samples[i].length      = MUL2(readWord(file));
-        song.samples[i].finetune    = readByte(file);
-        song.samples[i].volume      = readByte(file);
-        song.samples[i].repeatStart = MUL2(readWord(file));
-        song.samples[i].repeatEnd   = MUL2(readWord(file));
+        InstrSample *sample = &song.samples[i];
+        readFile(file, 22, sample->name);
+        sample->length      = MUL2(readWord(file));
+        sample->finetune    =     (readByte(file));
+        sample->volume      =     (readByte(file));
+        sample->repeatStart = MUL2(readWord(file));
+        sample->repeatEnd   = MUL2(readWord(file));
+        
+        //No one-shot loops, sorry.
+        sample->repeatEnd += sample->repeatStart;
+        if (sample->repeatEnd > 2) sample->length = sample->repeatStart + sample->repeatEnd;
     }
 
     //Song length in patterns
-    readFile(file, 1, &song.positionCount);
+    song.positionCount = readByte(file);
     //Magic byte
-    readByte(file);
+    song.resetPos = readByte(file);
     //Pattern map
     readFile(file, 128, &song.positions);
     //File format
     readFile(file, 4, &song.magic);
 
     //Print song info
-    printFormat("Handle: %i.\nSize: %i.\nSong: \"%s\"\nMagic: \"%s\"\nSamples:\n", 4, file, fileSize, song.name, song.magic);
+    printFormat("Handle: %i.\nSize: %i.\nSong: \"%s\"\nMagic: \"%s\"\nSamples:\nReset pos: %i\n", 5, file, fileSize, song.name, song.magic, song.resetPos);
 
     //Print sample info
     for (uint32 i = 1; i < 32; i++) {
@@ -106,16 +111,25 @@ void loadSong(wstr fileName) {
         hangThread();
     }
 
-    for (uint32 i = 0; i < song.patternCount; i++) {
-        for (uint32 j = 0; j < 64; j++) {
-            for (size_t n = 0; n < 4; n++) {
-                Note* note  = &song.patterns[i][(j << 2) + n];
+    //Read patterns
+    for (uint32 i = 0, j, n, m; i < song.patternCount; i++) {
+        for (j = 0; j < 64; j++) {
+            for (n = 0; n < 4; n++) {
+                Note* note      = &song.patterns[i][MUL4(j) + n];
+                uint16 period   = 0;
                 uint32 rawNote  = (readDWord(file));
                 note->sample    = ((rawNote & 0b11110000000000000000000000000000) >> 24);
-                note->period    = ((rawNote & 0b00001111111111110000000000000000) >> 16);
+                period          = ((rawNote & 0b00001111111111110000000000000000) >> 16);
                 note->sample   |= ((rawNote & 0b00000000000000001111000000000000) >> 12);
                 note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
                 note->effectArg = ((rawNote & 0b00000000000000000000000011111111) >> 0);
+                if (period != 0) for (m = 0; m < 84; m++) {
+                    if (notes[m] <= period) {
+                        note->note = m + 1;
+                        break;
+                    }
+                }
+                else note->note = 0;
             }
         }
     }
@@ -126,7 +140,7 @@ void loadSong(wstr fileName) {
 
     //Load samples
     printS("Message:\n");
-    for (size_t i = 1; i < 32; i++)
+    for (uint32 i = 1; i < 32; i++)
     {
         if (song.samples[i].length > 0) {
             song.samples[i].data = malloc(song.samples[i].length);
@@ -136,9 +150,6 @@ void loadSong(wstr fileName) {
             }
 
             readFile(file, song.samples[i].length, song.samples[i].data);
-
-            //Signed -> unsigned sample conversion.
-            //for (size_t j = 0; j < song.samples[i].length; j++) song.samples[i].data[j] ^= 128;
         }
         printFormat("%02i | %-22s |\n", 2, i, song.samples[i].name);
     }
@@ -151,22 +162,30 @@ void loadSong(wstr fileName) {
 
 //=== Play ===//
 
-uint8 uint8toint4[] = {0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1};
+//*Replace with macros
+InstrSample* getSample(uint8 sample) {
+    return &song.samples[sample];
+}
+Note getNote(uint8 channel) {
+    return song.patterns[song.pattern][MUL4(song.row) + channel];
+}
+Channel* getChannel(uint8 channel) {
+    return &song.channels[channel];
+}
 
-void resample(int8* buff, uint32 renderCount, uint16 period, Channel* chan) {
-    if (!chan->playing || period == 0) return;
-    InstrSample*
-        sample = getSample(chan->note.sample);
-    uint32
-        srcSR = 3546895 / period,// (+uint8toint4[getSample(chan->note.sample)->finetune]),
-        step = MUL64K(srcSR) / A_SR,
-        srcSize = (sample->repeatEnd < 2) ? sample->repeatEnd : sample->length;
+void loopSong() {
+    printS("Reset.\n");
+    song.position = song.resetPos;
+}
+
+void resample(int8* buff, uint32 renderCount, Channel* chan) {
+    if (!chan->playing) return;
+
+    InstrSample* sample = getSample(chan->sample);
 
     for (uint32 i = 0; i < renderCount; i++) {
-        //Correct rounding variant (If srcSize == 65535, this may lead in overflow...)
-        //((chan->progress & 65535) < 32767) ? DIV64K(chan->progress) : DIV64K(chan->progress) + 1; 
         uint16 index = DIV64K(chan->progress);
-        if (index >= srcSize) {
+        if (index >= sample->length) {
             if (sample->repeatEnd > 2) {
                 chan->progress = MUL64K(sample->repeatStart);
                 index = 0;
@@ -177,38 +196,31 @@ void resample(int8* buff, uint32 renderCount, uint16 period, Channel* chan) {
             }
         }
         buff[i] = DIV64(sample->data[index] * chan->volume);
-        chan->progress += step;
+        chan->progress += chan->currentStep;
     }
 }
 
-InstrSample *getSample(uint8 sample) {
-    return (sample < 32) ? (&song.samples[sample]) : (&song.samples[0]);
-}
-Note getNote(uint8 channel) {
-    return song.patterns[song.pattern][MUL4(song.row) + channel];
-}
-Channel *getChannel(uint8 channel) {
-    return &song.channels[channel & 3];
-}
-
-void loopSong() {
-    song.position = 0;
-}
-
 void processChannel(uint8 channel) {
-    Note newNote = getNote(channel);
+    Note     note = getNote(channel);
     Channel* chan = getChannel(channel);
 
-    if (newNote.sample != 0 || newNote.period != 0) {
-        chan->progress = 0;
-        chan->playing = 1;
-        if (newNote.sample != 0) {
-            chan->note.sample = newNote.sample;
-            chan->volume = getSample(newNote.sample)->volume;
-        }
-        if (newNote.period != 0) {
-            chan->note.period = newNote.period;
-        }
+    chan->effect    = note.effect;
+    chan->effectArg = note.effectArg;
+
+    if (note.sample != 0) {
+        InstrSample* sample = getSample(note.sample);
+
+        chan->sample   = note.sample;
+        chan->volume   = sample->volume;
+        chan->finetune = sample->finetune;
+    }
+
+    if (note.note != 0) {
+        chan->progress    = 0;
+        chan->playing     = 1;
+        chan->basePeriod  = periods[(note.note - 1) + (chan->finetune * 84)];
+        chan->currentFreq = 56750320 / chan->basePeriod;
+        chan->currentStep = MUL64K(chan->currentFreq) / A_SR;
     }
 
     processRowFX(channel);
@@ -229,53 +241,51 @@ void update() {
 }
 
 void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
-    Note note = song.channels[channel].note;
-
     resample(
         buff,
         buffSize,
-        note.period,
         getChannel(channel)
     );
 }
 
 void fillBuffer(LRSample* buff, HWAVEOUT h) {
-    static uint32 clck = 0, init = 0;
-    uint8 buffl[A_SPB] = { 0 }, buffr[A_SPB] = { 0 }, buffl2[A_SPB] = { 0 }, buffr2[A_SPB] = { 0 };
+    static bool init = 0;
+    uint8
+        buffl[A_SPB]  = { 0 },
+        buffr[A_SPB]  = { 0 },
+        buffl2[A_SPB] = { 0 },
+        buffr2[A_SPB] = { 0 };
 
     if (!init) {
-        song.tempo = 125;
-        song.tpr = 6;
-        song.tps = MUL2(song.tempo) / 5;
+        song.tempo   = 125;
+        song.tpr     = 6;
+        song.tps     = 50;
+        song.bpt     = A_SR / 50;
         song.pattern = song.positions[0];
-        for (size_t i = 0; i < 4; i++) song.channels[i].volume = 64;
-
+        for (uint8 i = 0; i < 4; i++) getChannel(i)->channelID = i;
         printS("Starting playback...\n");
         init = 1;
     }
 
     for (uint32 i = 0; i < A_SPB;) {
-        uint32 bpt = (A_SR / song.tps); //Bytes per tick
         //Остаточный размер MME буфера (Отрендерить до конца) || Сколько осталось отрендерить до конца такта
-        uint32 maxToRender = min(A_SPB - i, bpt - song.tickRenderCount);
+        uint32 maxToRender = min(A_SPB - i, song.bpt - song.tickRenderCount);
 
         renderChannel(0, buffl + i, maxToRender);
         renderChannel(1, buffr + i, maxToRender);
         renderChannel(2, buffr2 + i, maxToRender);
         renderChannel(3, buffl2 + i, maxToRender);
 
-        i += maxToRender;
+        i                    += maxToRender;
         song.tickRenderCount += maxToRender;
 
-        if (song.tickRenderCount > bpt) MessageBoxA(0, "song.bytesPerTick < song.alreadyRendered!", "ERROR!", MB_ICONERROR);
-        else if (song.tickRenderCount == bpt) {
+        if (song.tickRenderCount == song.bpt) {
             if (!(song.ticker % song.tpr)) {
                 update();
                 printRow();
                 song.row++;
             }
-            else for (uint32 i = 0; i < 4; i++) {
-                if (getNote(i).effect != 0 && getNote(i).effectArg != 0) getChannel(i)->lastEffect = getNote(i);
+            for (uint32 i = 0; i < 4; i++) {
                 processTickFX(i);
             }
 
@@ -284,12 +294,7 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
         }
     }
 
-    for (uint32 i = 0; i < A_SPB; i++)
-    {
-        buff[i].l = buffl[i] ^ 128;
-        buff[i].r = buffr[i] ^ 128;
-    } //return;
-    float stereoMix = 0.20;
+    float stereoMix = 0.25;
     for (uint32 i = 0; i < A_SPB; i++)
     {
         buff[i].l = ((((buffl[i] ^ 128) + (buffl2[i] ^ 128)) * (1 - stereoMix))

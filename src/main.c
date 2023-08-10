@@ -29,29 +29,29 @@ void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 par
         }
     }
 }
-
+extern uint16 notes[];
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
     //space_debris | occ_san_geen | fairlight | hymn_to_aurora | beyond_music | ELYSIUM | GSLINGER
     for (uint32 i = 0; i < A_SPB; i++) {
-        buff1[i].l = 128;
-        buff2[i].r = 128;
-        buff1[i].r = 128;
-        buff2[i].l = 128;
+        ((uint16 *)(buff1))[i] = 0x8080;
+        ((uint16 *)(buff2))[i] = 0x8080;
     }
 
     initConsole();
-	//for (size_t i = 0; i < 16; i++)
-	//{
-	//	for (size_t j = 0; j < 7; j++)
-	//	{
-	//		for (size_t n = 0; n < 12; n++)
-	//		{
-	//			printFormat("%5i, ", 1, periods[(i * 84) + n + (j * 12)] >> 4);
-	//		}
-	//		printC('\n');
-	//	}
-	//	printC('\n');
-	//}
+    goto lSkip;
+	for (size_t i = 0; i < 16; i++)
+	{
+		for (size_t j = 0; j < 7; j++)
+		{
+			for (size_t n = 0; n < 12; n++)
+			{
+				printFormat("%4i, ", 1, notes[(i * 84) + n + (j * 12)] >> 4);
+			}
+			printC('\n');
+		}
+		printC('\n');
+	}
+    lSkip:
     loadSong(L"C:\\ELYSIUM.mod");
 
     soundFormat.wFormatTag = WAVE_FORMAT_PCM;
