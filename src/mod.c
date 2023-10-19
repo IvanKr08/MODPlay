@@ -1,15 +1,20 @@
 #include "mod.h"
+#define CF_EXTFILE
 
+#ifdef CF_EXTFILE
+static int32 offset;
+#endif
+    
 Song song;
 
 //=== Load file ===//
-
 static void readFile(HANDLE file, uint32 count, void* buff) {
+#ifdef CF_EXTFILE
     BOOL readResult = ReadFile(file, buff, count, 0, 0);
-    if (readResult == FALSE) {
-        printS("File read error.\n");
-        hangThread();
-    }
+    fatal(readResult, "File read error.");
+#else
+    for (size_t i = 0; i < count; i++, offset++) ((byte*)buff)[i] = ((byte*)file)[offset];
+#endif
 }
 static uint8 readByte(HANDLE file) {
     uint8 val;
@@ -19,27 +24,25 @@ static uint8 readByte(HANDLE file) {
 static uint16 readWord(HANDLE file) {
     uint16 val;
     readFile(file, 2, &val);
-    return (val >> 8) | ((val & 255) << 8);
+    return (val >> 8) | ((val & 0xFF) << 8);
 }
 static uint32 readDWord(HANDLE file) {
     uint32 val;
     readFile(file, 4, &val);
-    return ((val >> 24) & 0xff) | ((val << 8) & 0xff0000) | ((val >> 8) & 0xff00) | ((val << 24) & 0xff000000);
+    return ((val >> 24) & 0xFF) | ((val << 8) & 0xFF0000) | ((val >> 8) & 0xFF00) | ((val << 24) & 0xFF000000);
 }
 
-void loadSong(wstr fileName) {
-    HANDLE file;
-    uint32 fileSize;
 
-    //Open file
-    file = CreateFileW(fileName, FILE_READ_DATA, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (file == INVALID_HANDLE_VALUE) {
-        printS("Could not open file.\n");
-        hangThread();
-    }
-    fileSize = GetFileSize(file, 0);
-    
-    //Song name
+
+void loadSong(wstr fileName) {
+#ifdef CF_EXTFILE
+    HANDLE file = CreateFileW(fileName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    fatal(file != INVALID_HANDLE_VALUE, "Could not open file.");
+    int32 fileSize = GetFileSize(file, 0);
+#else
+    HANDLE file = LockResource(LoadResource(GetModuleHandleA(0), FindResourceA(GetModuleHandleA(0), "IDF_SONG", RT_RCDATA)));
+    int32 fileSize = -1;
+#endif
     readFile(file, 20, song.name);
 
     //Sample headers
@@ -50,66 +53,48 @@ void loadSong(wstr fileName) {
         sample->finetune    =     (readByte(file));
         sample->volume      =     (readByte(file));
         sample->repeatStart = MUL2(readWord(file));
-        sample->repeatEnd   = MUL2(readWord(file));
-        
-        //No one-shot loops, sorry.
-        sample->repeatEnd += sample->repeatStart;
-        if (sample->repeatEnd > 2) sample->length = sample->repeatStart + sample->repeatEnd;
+        sample->repeatEnd   = MUL2(readWord(file)) + sample->repeatStart;
+
+        if (!sample->repeatStart) sample->repeatEnd = sample->length; //No one-shot loops, sorry.
     }
 
-    //Song length in patterns
-    song.positionCount = readByte(file);
-    //Magic byte
-    song.resetPos = readByte(file);
-    //Pattern map
+    song.positionCount  = readByte(file);
+    song.resetPos       = readByte(file);
     readFile(file, 128, &song.positions);
-    //File format
     readFile(file, 4, &song.magic);
 
     //Print song info
-    printFormat("Handle: %i.\nSize: %i.\nSong: \"%s\"\nMagic: \"%s\"\nSamples:\nReset pos: %i\n", 5, file, fileSize, song.name, song.magic, song.resetPos);
-
-    //Print sample info
+    printFormat("Handle: %i.\nSize: %i.\nSong: \"%s\"\nMagic: \"%s\"\nReset pos: %i\nSamples:\n", 5, file, fileSize, song.name, song.magic, song.resetPos);
+    printS("NN | Name                   | Vol    FnTune   | Length    Lp. Strt  Lp. End  |\n");
     for (uint32 i = 1; i < 32; i++) {
-        printFormat("%0-2i | Name: \"%-22s\"\n", 2,
+        printFormat ("%0-2i | %-22s | V: %-2i  FTUN: %-2i | L: %-5i  S: %-5i  E: %-5i |\n", 7,
             i,
-            song.samples[i].name
-        );
-        printFormat("%0-2i | Size in bytes: %-6i | Finetune: %-1X | Volume: %-2i | Repeat start: %-6i | Repeat end: %-6i |\n\n", 6,
-            i,
-            song.samples[i].length,
-            song.samples[i].finetune,
+            song.samples[i].name,
             song.samples[i].volume,
+            int4[song.samples[i].finetune],
+            song.samples[i].length,
             song.samples[i].repeatStart,
             song.samples[i].repeatEnd
         );
     }
-
-    // ===
-    // Patterns
-    // ===
 
     //Print pattern info and find its count
     printFormat("Song length: %i.\nSong positions:\n", 1, song.positionCount);
     for (uint32 i = 0; i < 8; i++) {
         printS("| ");
         for (uint32 j = 0; j < 16; j++) {
-            uint8 pattern = song.positions[MUL8(i) + j];
+            uint8 pattern = song.positions[MUL16(i) + j];
             if (song.patternCount < pattern) song.patternCount = pattern;
             printFormat("%-3i ", 1, pattern);
         }
         printS("|\n");
     }
-    printC('\n');
     song.patternCount++;
     printFormat("Pattern count: %i.\n", 1, song.patternCount);
 
     //Alloc pattern buffer
-    song.patterns = malloc(sizeof(Pattern) * song.patternCount);
-    if (song.patterns == 0) {
-        printS("Could not allocate memory for patterns.\n");
-        hangThread();
-    }
+    song.patterns = memAlloc(sizeof(Pattern) * song.patternCount);
+    fatal(song.patterns, "Could not allocate memory for patterns.");
 
     //Read patterns
     for (uint32 i = 0, j, n, m; i < song.patternCount; i++) {
@@ -134,35 +119,26 @@ void loadSong(wstr fileName) {
         }
     }
 
-    // ===
-    // Samples
-    // ===
-
     //Load samples
-    printS("Message:\n");
-    for (uint32 i = 1; i < 32; i++)
-    {
+    for (uint32 i = 1; i < 32; i++) {
         if (song.samples[i].length > 0) {
-            song.samples[i].data = malloc(song.samples[i].length);
-            if (song.samples[i].data == 0) {
-                printS("Could not allocate memory for samples.\n");
-                hangThread();
-            }
+            song.samples[i].data = memAlloc(song.samples[i].length);
+            fatal(song.samples[i].data, "Could not allocate memory for samples.");
 
             readFile(file, song.samples[i].length, song.samples[i].data);
         }
-        printFormat("%02i | %-22s |\n", 2, i, song.samples[i].name);
     }
 
     printS("EOF\n");
+#ifdef CF_EXTFILE
     CloseHandle(file);
+#endif
 }
-
 //===
 
-//=== Play ===//
 
-//*Replace with macros
+
+//=== Getters (Replace with macros) ===//
 InstrSample* getSample(uint8 sample) {
     return &song.samples[sample];
 }
@@ -172,139 +148,171 @@ Note getNote(uint8 channel) {
 Channel* getChannel(uint8 channel) {
     return &song.channels[channel];
 }
+//===
 
-void loopSong() {
-    printS("Reset.\n");
-    song.position = song.resetPos;
-}
 
+
+//=== Playback ===//
 void resample(int8* buff, uint32 renderCount, Channel* chan) {
-    if (!chan->playing) return;
-
+    uint32 i = 0;
+    if (!chan->playing || chan->volume == 0) goto lFillOut;
     InstrSample* sample = getSample(chan->sample);
 
-    for (uint32 i = 0; i < renderCount; i++) {
+    for (; i < renderCount; i++) {
         uint16 index = DIV64K(chan->progress);
-        if (index >= sample->length) {
-            if (sample->repeatEnd > 2) {
+        if (index >= sample->repeatEnd) {
+            if (sample->repeatStart) {
                 chan->progress = MUL64K(sample->repeatStart);
                 index = 0;
             }
             else {
                 chan->playing = 0;
-                return;
+                goto lFillOut;
             }
         }
         buff[i] = DIV64(sample->data[index] * chan->volume);
         chan->progress += chan->currentStep;
     }
+
+lFillOut:;
+    for (; i < renderCount; i++) buff[i] = 0;
 }
 
-void processChannel(uint8 channel) {
-    Note     note = getNote(channel);
-    Channel* chan = getChannel(channel);
 
-    chan->effect    = note.effect;
-    chan->effectArg = note.effectArg;
 
-    if (note.sample != 0) {
-        InstrSample* sample = getSample(note.sample);
+void onTick() {
+    //Update row
+    if (song.rowTick == 0) {
+        //Update pattern
+        if (song.patternBreak < 64) {
+            song.row = song.patternBreak;
+            printS("Pattern break.\n");
+            song.patternBreak = 255;
 
-        chan->sample   = note.sample;
-        chan->volume   = sample->volume;
-        chan->finetune = sample->finetune;
+            song.position++;
+            if (song.position >= song.positionCount) {
+                printS("Reset.\n");
+                song.position = 0;
+            }
+            song.pattern = song.positions[song.position];
+
+            printFormat("Pattern: %3i, position: %3i\n", 2, song.pattern, song.position);
+        }
+
+        if (song.row >= 64) {
+            song.row = 0;
+            song.position++;
+            if (song.position >= song.positionCount) {
+                printS("Reset.\n");
+                song.position = 0;
+            }
+            song.pattern = song.positions[song.position];
+
+            printFormat("Pattern: %3i, position: %3i\n", 2, song.pattern, song.position);
+        }
+        //===
+
+        //Update channels
+        for (uint32 i = 0; i < 4; i++) {
+            Note     note = getNote(i);
+            Channel* chan = getChannel(i);
+
+            chan->effect    = note.effect;
+            chan->effectArg = note.effectArg;
+
+            if (note.sample != 0) {
+                InstrSample* sample = getSample(note.sample);
+
+                chan->sample   = note.sample;
+                chan->volume   = sample->volume;
+                chan->finetune = sample->finetune;
+            }
+
+            if (note.note != 0) {
+                chan->progress   = 0;
+                chan->playing    = 1;
+                chan->basePeriod = periods[(note.note - 1) + (chan->finetune * 84)];
+                chan->portamento = 0;
+            }
+            
+            processRowFX(chan);
+        }
+        //===
+
+        printRow();
+        song.row++;
+        song.rowTick = 0;
+    }
+    //===
+
+    //Update tick
+    song.tickRenderCount = 0;
+    //PAL  56750320
+    //NTSC 57272720
+
+    for (uint32 i = 0; i < 4; i++) {
+        Channel* chan = getChannel(i);
+        if (chan->playing) {
+            uint32 period = getChannel(i)->basePeriod + MUL16(getChannel(i)->portamento);
+            chan->currentFreq = 56750320 / period;
+            chan->currentStep = MUL64K(getChannel(i)->currentFreq) / A_SR;
+        }
+        processTickFX(chan);
     }
 
-    if (note.note != 0) {
-        chan->progress    = 0;
-        chan->playing     = 1;
-        chan->basePeriod  = periods[(note.note - 1) + (chan->finetune * 84)];
-        chan->currentFreq = 56750320 / chan->basePeriod;
-        chan->currentStep = MUL64K(chan->currentFreq) / A_SR;
-    }
-
-    processRowFX(channel);
-}
-
-void update() {
-    //Update row and position
-    if (song.row >= 64) {
-        song.row = 0;
-        song.position++;
-        if (song.position >= song.positionCount) loopSong();
-        song.pattern = song.positions[song.position];
-        printFormat("Pattern: %3i, position: %3i\n", 2, song.pattern, song.position);
-    }
-
-    //Update channels
-    for (uint32 i = 0; i < 4; i++) processChannel(i);
-}
-
-void renderChannel(uint8 channel, uint8 *buff, uint32 buffSize) {
-    resample(
-        buff,
-        buffSize,
-        getChannel(channel)
-    );
+    if (++song.rowTick == song.tpr) song.rowTick = 0;
+    song.ticker++;
+    //===
 }
 
 void fillBuffer(LRSample* buff, HWAVEOUT h) {
     static bool init = 0;
-    uint8
-        buffl[A_SPB]  = { 0 },
-        buffr[A_SPB]  = { 0 },
-        buffl2[A_SPB] = { 0 },
-        buffr2[A_SPB] = { 0 };
+    uint8 buff1[A_SPB], buff2[A_SPB], buff3[A_SPB], buff4[A_SPB];
 
     if (!init) {
-        song.tempo   = 125;
-        song.tpr     = 6;
-        song.tps     = 50;
-        song.bpt     = A_SR / 50;
-        song.pattern = song.positions[0];
-        for (uint8 i = 0; i < 4; i++) getChannel(i)->channelID = i;
+        song.tempo    = 125;
+        song.tpr      = 6;
+        song.tps      = 50;
+        song.spt      = A_SR / (MUL2(song.tempo) / 5);
+        song.position = 0;
+        song.pattern  = song.positions[song.position];
+        song.patternBreak = 255;
         printS("Starting playback...\n");
         init = 1;
+        onTick();
     }
 
     for (uint32 i = 0; i < A_SPB;) {
         //Остаточный размер MME буфера (Отрендерить до конца) || Сколько осталось отрендерить до конца такта
-        uint32 maxToRender = min(A_SPB - i, song.bpt - song.tickRenderCount);
+        uint32 maxToRender = min(A_SPB - i, song.spt - song.tickRenderCount);
 
-        renderChannel(0, buffl + i, maxToRender);
-        renderChannel(1, buffr + i, maxToRender);
-        renderChannel(2, buffr2 + i, maxToRender);
-        renderChannel(3, buffl2 + i, maxToRender);
+
+        resample(buff1 + i, maxToRender, getChannel(0));
+        resample(buff2 + i, maxToRender, getChannel(1));
+        resample(buff3 + i, maxToRender, getChannel(2));
+        resample(buff4 + i, maxToRender, getChannel(3));
 
         i                    += maxToRender;
         song.tickRenderCount += maxToRender;
 
-        if (song.tickRenderCount == song.bpt) {
-            if (!(song.ticker % song.tpr)) {
-                update();
-                printRow();
-                song.row++;
-            }
-            for (uint32 i = 0; i < 4; i++) {
-                processTickFX(i);
-            }
-
-            song.tickRenderCount = 0;
-            song.ticker++;
-        }
+        if (song.tickRenderCount == song.spt) onTick();
     }
 
-    float stereoMix = 0.25;
     for (uint32 i = 0; i < A_SPB; i++)
     {
-        buff[i].l = ((((buffl[i] ^ 128) + (buffl2[i] ^ 128)) * (1 - stereoMix))
-                   + (((buffr[i] ^ 128) + (buffr2[i] ^ 128)) * (stereoMix))) / 2;
-        buff[i].r = ((((buffl[i] ^ 128) + (buffl2[i] ^ 128)) * (stereoMix))
-                   + (((buffr[i] ^ 128) + (buffr2[i] ^ 128)) * (1 - stereoMix))) / 2;
+        float stereoMix = 0.25;
+        //buff[i].l = buff1[i] ^ 128;
+        //continue;
+        buff[i].l = (((((buff1[i] ^ 128) + (buff4[i] ^ 128)) * (1 - stereoMix))
+                   + (((buff2[i] ^ 128) + (buff3[i] ^ 128)) * (stereoMix))) / 2);
+        buff[i].r = (((((buff1[i] ^ 128) + (buff4[i] ^ 128)) * (stereoMix))
+                   + (((buff2[i] ^ 128) + (buff3[i] ^ 128)) * (1 - stereoMix))) / 2);
     }
 }
+//===
 
 
+//for (uint32 i = 0; i < A_SPB; i++) { buff[i].l = buffr[i] ^ 128; buff[i].r = buffr[i] ^ 128; } return;
 //printFormat("Sample \"%-22s\" of size %-6i has been loaded.\n", 2, song.samples[i].name, song.samples[i].length);
 //Load & print patterns data
 //printS("Patterns:");

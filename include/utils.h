@@ -2,10 +2,6 @@
 #include <Windows.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#include <math.h>
-#include <assert.h>
-#include <stdarg.h>
 
 typedef unsigned char   uint8;
 typedef unsigned short  uint16;
@@ -17,7 +13,8 @@ typedef int32           bool;
 typedef char*           cstr;
 typedef wchar_t*        wstr;
 
-void hangThread();
+void* memAlloc(uint32 count);
+void fatal(bool val, cstr msg);
 
 #pragma region Shift MUL/DIV
 #define DIV2(val) ((val) >> 1)

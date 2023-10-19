@@ -2,5 +2,5 @@
 #include "utils.h"
 #include "mod.h"
 
-void processTickFX(uint8 channel);
-void processRowFX(uint8 channel);
+void processTickFX(Channel* chan);
+void processRowFX(Channel* chan);

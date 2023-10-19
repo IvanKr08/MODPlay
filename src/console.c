@@ -1,4 +1,5 @@
 #include "console.h"
+#include <stdarg.h>
 
 //===
 
@@ -6,13 +7,13 @@ static HANDLE stdi = 0, stdo = 0;
 
 void initConsole() {
     AllocConsole();
-    stdo = GetStdHandle(-11);
-    stdi = GetStdHandle(-10);
+    stdo = GetStdHandle((DWORD)-11);
+    stdi = GetStdHandle((DWORD)-10);
 }
 
 void printI(int32 value) {
     char num[16];
-    itoa(value, num, 10);
+    _itoa_s(value, num, 16, 10);
     printS(num);
     printC('\n');
 }
@@ -25,14 +26,14 @@ void printS(cstr string) {
 void printFormat(cstr format, uint32 count, ...) {
     char string[1024];
     va_list args;
-    int32 len = 0;
     
     va_start(args, count);
-    len = vsprintf_s(string, 1024, format, args);
+    vsprintf_s(string, 1024, format, args);
     va_end(args);
 
     printS(string);
 }
+/*
 void printSystem(cstr format, uint32 count, ...) {
     char string[1024];
     va_list args;
@@ -44,9 +45,10 @@ void printSystem(cstr format, uint32 count, ...) {
 
     system(string);
 }
+*/
 //===
 
-static uint32 colors[] = {
+static WORD colors[] = {
     FOREGROUND_RED,
     FOREGROUND_GREEN,
     FOREGROUND_BLUE,
@@ -77,7 +79,7 @@ void printRow() {
         printRowBuff[1] = (song.row % 10) + '0';
     }
 
-    for (uint32 i = 0; i < 4; i++) {
+    for (uint8 i = 0; i < 4; i++) {
         cstr base = printRowBuff + 4 + (14 * i); //Buffer + "XX |"Offset + (ChannelWidth * CurrentChannel)
         Note note = getNote(i);
 
@@ -102,26 +104,27 @@ void printRow() {
         }
 
         //Effect
-        if (note.effectArg != 0 && note.effect != 0) {
+        if (note.effectArg != 0 || note.effect != 0) {
             base[8]  = hex[note.effect];
             base[9]  = '-';
             base[10] = hex[note.effectArg >> 4];
             base[11] = hex[note.effectArg & 15];
         }
         else {
-            base[8]  = '.';
-            base[9]  = '.';
-            base[10] = '.';
-            base[11] = '.';
+            base[8]  = ' ';
+            base[9]  = ' ';
+            base[10] = ' ';
+            base[11] = ' ';
         }
     }
     WriteConsoleA(stdo, printRowBuff, 61, 0, 0);
 
+    return;
     CONSOLE_SCREEN_BUFFER_INFO info;
     GetConsoleScreenBufferInfo(stdo, &info);
     COORD coord = { .X = 9, .Y = info.dwCursorPosition.Y - 1 };
 
-    for (uint32 i = 0; i < 4; i++) {
+    for (uint8 i = 0; i < 4; i++) {
         DWORD tmp;
         uint8 sample = getNote(i).sample;
         FillConsoleOutputAttribute(stdo, colors[sample & 15], 1, coord, &tmp);

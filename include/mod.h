@@ -1,10 +1,6 @@
 #pragma once
 #include "utils.h"
 #include "console.h"
-#include "fx.h"
-
-//typedef uint16 FREQ; //Frequency typedef
-//typedef uint8 NOTEID;  //Note ID (Ex. C-4, G#5, no note) typedef
 
 #pragma pack(push, 1)
 typedef struct {
@@ -34,23 +30,25 @@ typedef Note Pattern[256];
 
 typedef struct {
     //Playback
-    uint8        channelID;
-    bool         playing;       //Playing state
-    uint32       progress;      //Sample progress (i << 16)
-    uint16       basePeriod;    //Finetuned note
-    uint32       currentFreq;   //
-    uint32       currentStep;
-    uint8        sample;
-    //InstrSample* currentSample; //
+    bool        playing;       //Playing state
+    uint32      progress;      //Sample progress (<< 16)
+    uint16      basePeriod;    //Finetuned note period
+    uint32      currentFreq;   //Precalculated frequency (Remember to update with any period change!)
+    uint32      currentStep;   //Step in src array in resampler
+    uint8       sample;        //Sample num
 
     //FX
-    uint8        effect;
-    uint8        effectArg;
-    uint8        volume;        //Current volume (Set from sample if row sample != 0)
-    uint8        finetune;      //(E-5X) Last finetune (Set from sample if row sample != 0)
-    uint8        lastOffset;    //(9-XX) Last offset
-    //Tone portamento (Slide to note)
-    //int8        tpDir;
+    uint8       effect;        //Effect num
+    uint8       effectArg;     //Effect arg
+    uint8       finetune;      //(E-5X) Last finetune (Set from sample if row sample != 0)
+
+    uint8       volume;        //Current volume (Set from sample if row sample != 0)
+
+    int16       portamento;    //(1-XX) (2-XX) (3-XX) Period shift (<< 4)
+    uint16      desiredPeriod; //(3-XX) Target period
+
+    //Memory
+    uint8       offsetMem;     //(9-XX) Last offset
 } Channel;
 
 typedef struct {
@@ -73,14 +71,18 @@ typedef struct {
     //Rendering
     Channel     channels[4];      //Channels data
     uint32      tickRenderCount;  //How much samples has been rendered for this tick
-    uint32      bpt;              //Bytes per tick
+    uint32      spt;              //Samples per tick
 
     //Playback speed
     uint32      ticker;           //Global counter
+    uint8       rowTick;          //Current tick in a row
     uint32      tps;              //Ticks per second
     uint8       tpr;              //Ticks per row (F-(XX < 32)). Default: 6
     uint8       tempo;            //Tempo. Default: 125 (Should update tps)
     
+    //Control queue
+    uint8       patternBreak;     //Break to the next pattern if < 64
+
     //Other
     InstrSample samples[32];      //Samples
 } Song;
@@ -93,6 +95,3 @@ Channel*     getChannel(uint8 channel);
 
 void         fillBuffer(LRSample* buff, HWAVEOUT h);
 void         loadSong(wstr fileName);
-
-//InstrSample* sample;      //Pointer to the current sample
-//InstrSample* nextSample;  //Pointer to the next sample (Used when sample specified without a note)
