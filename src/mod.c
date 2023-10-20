@@ -1,22 +1,19 @@
 #include "mod.h"
 #define CF_EXTFILE
-
-#ifdef CF_EXTFILE
-static int32 offset;
-#endif
     
 Song song;
 
 //=== Load file ===//
-static void readFile(HANDLE file, uint32 count, void* buff) {
+static void   readFile(HANDLE file, uint32 count, void* buff) {
 #ifdef CF_EXTFILE
     BOOL readResult = ReadFile(file, buff, count, 0, 0);
     fatal(readResult, "File read error.");
 #else
+    static uint32 offset;
     for (size_t i = 0; i < count; i++, offset++) ((byte*)buff)[i] = ((byte*)file)[offset];
 #endif
 }
-static uint8 readByte(HANDLE file) {
+static uint8  readByte(HANDLE file) {
     uint8 val;
     readFile(file, 1, &val);
     return val;
@@ -39,6 +36,7 @@ void loadSong(wstr fileName) {
     HANDLE file = CreateFileW(fileName, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     fatal(file != INVALID_HANDLE_VALUE, "Could not open file.");
     int32 fileSize = GetFileSize(file, 0);
+    fatal(fileSize < 2097152 /* 2MiB */, "File too big!");
 #else
     HANDLE file = LockResource(LoadResource(GetModuleHandleA(0), FindResourceA(GetModuleHandleA(0), "IDF_SONG", RT_RCDATA)));
     int32 fileSize = -1;
@@ -109,7 +107,7 @@ void loadSong(wstr fileName) {
                 note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
                 note->effectArg = ((rawNote & 0b00000000000000000000000011111111) >> 0);
                 if (period != 0) for (m = 0; m < 84; m++) {
-                    if (notes[m] <= period) {
+                    if (notePeriods[m] <= period) {
                         note->note = m + 1;
                         break;
                     }
@@ -182,7 +180,7 @@ lFillOut:;
 
 void onTick() {
     //Update row
-    if (song.rowTick == 0) {
+    if (!song.rowTick) {
         //Update pattern
         if (song.patternBreak < 64) {
             song.row = song.patternBreak;
@@ -220,21 +218,42 @@ void onTick() {
             chan->effect    = note.effect;
             chan->effectArg = note.effectArg;
 
-            if (note.sample != 0) {
+            if (note.sample) {
                 InstrSample* sample = getSample(note.sample);
 
-                chan->sample   = note.sample;
-                chan->volume   = sample->volume;
-                chan->finetune = sample->finetune;
+                chan->qSample   = note.sample;
+                chan->volume    = sample->volume;
             }
 
-            if (note.note != 0) {
-                chan->progress   = 0;
-                chan->playing    = 1;
-                chan->basePeriod = periods[(note.note - 1) + (chan->finetune * 84)];
-                chan->portamento = 0;
+            if (note.effect == 0xE && (note.effectArg >> 4) == 5) chan->finetune = (note.effectArg & 0x0F);
+
+            if (note.note) {
+                if (note.effect != 3 && note.effect != 5) {
+                    if (chan->qSample) {
+                        InstrSample* sample = getSample(chan->qSample);
+
+                        chan->sample = chan->qSample;
+                        chan->finetune = sample->finetune;
+                        chan->qSample = 0;
+                    }
+
+                    chan->progress = 0;
+
+                    if (note.effect == 9) {
+                        chan->offsetMem = note.effectArg ? note.effectArg : chan->offsetMem;
+                        chan->progress = chan->offsetMem << 24;
+                    }
+
+                    chan->playing = 1;
+                    chan->basePeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
+                    chan->portamento = 0;
+                    chan->targetPeriod = 0;
+                }
+                else if (chan->basePeriod) {
+                    chan->targetPeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
+                }
             }
-            
+
             processRowFX(chan);
         }
         //===
@@ -253,7 +272,9 @@ void onTick() {
     for (uint32 i = 0; i < 4; i++) {
         Channel* chan = getChannel(i);
         if (chan->playing) {
-            uint32 period = getChannel(i)->basePeriod + MUL16(getChannel(i)->portamento);
+            uint32 period = getChannel(i)->basePeriod + getChannel(i)->portamento;
+            //printI(i);
+            fatal(period, "Zero period.");
             chan->currentFreq = 56750320 / period;
             chan->currentStep = MUL64K(getChannel(i)->currentFreq) / A_SR;
         }
@@ -274,7 +295,8 @@ void fillBuffer(LRSample* buff, HWAVEOUT h) {
         song.tpr      = 6;
         song.tps      = 50;
         song.spt      = A_SR / (MUL2(song.tempo) / 5);
-        song.position = 0;
+        //song.position = 7;
+        //song.row      = 40;
         song.pattern  = song.positions[song.position];
         song.patternBreak = 255;
         printS("Starting playback...\n");

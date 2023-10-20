@@ -30,61 +30,65 @@ typedef Note Pattern[256];
 
 typedef struct {
     //Playback
-    bool        playing;       //Playing state
-    uint32      progress;      //Sample progress (<< 16)
-    uint16      basePeriod;    //Finetuned note period
-    uint32      currentFreq;   //Precalculated frequency (Remember to update with any period change!)
-    uint32      currentStep;   //Step in src array in resampler
-    uint8       sample;        //Sample num
+    bool        playing;            //Playing state
+    uint32      progress;           //Sample progress (<< 16)
+    uint16      basePeriod;         //Finetuned note period
+    uint32      currentFreq;        //Precalculated frequency (Remember to update with any period change!)
+    uint32      currentStep;        //Step in src array in resampler
+    uint8       sample;             //Sample num
+
+    uint8       qSample;            //Sample to be used in the next notes
+    uint8       qFinetune;          //Finetune to be used in the next notes
 
     //FX
-    uint8       effect;        //Effect num
-    uint8       effectArg;     //Effect arg
-    uint8       finetune;      //(E-5X) Last finetune (Set from sample if row sample != 0)
+    uint8       effect;             //Effect num
+    uint8       effectArg;          //Effect arg
+    uint8       finetune;           //(E-5X) Last finetune (Set from sample if row sample != 0)
 
-    uint8       volume;        //Current volume (Set from sample if row sample != 0)
+    uint8       volume;             //Current volume (Set from sample if row sample != 0)
 
-    int16       portamento;    //(1-XX) (2-XX) (3-XX) Period shift (<< 4)
-    uint16      desiredPeriod; //(3-XX) Target period
+    int32       portamento;         //(1-XX) (2-XX) (3-XX) Period shift (<< 4)
+    uint16      targetPeriod;       //(3-XX) Tone portamento target period (0 if reached)
 
     //Memory
-    uint8       offsetMem;     //(9-XX) Last offset
+    uint8       offsetMem;          //(9-00) Last offset
+    uint8       tonePortMem;        //(3-00) Tone portamento memory
 } Channel;
 
 typedef struct {
     //Strings
-    uint8       name[21];         //Song name
-    uint8       magic[5];         //File format
+    uint8       name[21];           //Song name
+    uint8       magic[5];           //File format
 
     //Patterns
-    Pattern*    patterns;         //Patterns array
-    uint8       patternCount;     //Count of patterns
-    uint8       pattern;          //Current pattern
-    uint8       row;              //Position in pattern
+    Pattern*    patterns;           //Patterns array
+    uint8       patternCount;       //Count of patterns
+    uint8       pattern;            //Current pattern
+    uint8       row;                //Position in pattern
 
     //Song map
-    uint8       positions[128];   //Song map
-    uint8       positionCount;    //Song length
-    uint8       position;         //Position in song map (Song progress)
+    uint8       positions[128];     //Song map
+    uint8       positionCount;      //Song length
+    uint8       position;           //Position in song map (Song progress)
     uint8       resetPos;
 
     //Rendering
-    Channel     channels[4];      //Channels data
-    uint32      tickRenderCount;  //How much samples has been rendered for this tick
-    uint32      spt;              //Samples per tick
+    Channel     channels[4];        //Channels data
+    uint32      tickRenderCount;    //How much samples has been rendered for this tick
+    uint32      spt;                //Samples per tick
 
     //Playback speed
-    uint32      ticker;           //Global counter
-    uint8       rowTick;          //Current tick in a row
-    uint32      tps;              //Ticks per second
-    uint8       tpr;              //Ticks per row (F-(XX < 32)). Default: 6
-    uint8       tempo;            //Tempo. Default: 125 (Should update tps)
+    uint32      ticker;             //Global counter
+    uint8       rowTick;            //Current tick in a row
+    uint32      tps;                //Ticks per second
+    uint8       tpr;                //Ticks per row (F-(XX < 32)). Default: 6
+    uint8       tempo;              //Tempo. Default: 125 (Should update tps)
     
     //Control queue
-    uint8       patternBreak;     //Break to the next pattern if < 64
+    uint8       patternBreak;       //Break to the next pattern if < 64
 
     //Other
-    InstrSample samples[32];      //Samples
+    InstrSample samples[32];        //Samples
 } Song;
 
 extern Song song;

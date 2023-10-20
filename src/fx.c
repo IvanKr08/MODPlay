@@ -1,49 +1,98 @@
 #include "fx.h"
 
-#define FX_ADJUSTVOLUME(volume, adjustVal) {\
-    if (song.rowTick != 0 && adjustVal != 0){\
-        int8 volShift = adjustVal > 0x0F ? (adjustVal >> 4) : -adjustVal;\
-        if (((uint8)(volume + volShift)) <= 64) volume += volShift;\
-        else if (volShift < 0) volume = 0;\
-        else volume = 64;\
-    }\
+static void volumeSlide(Channel* chan, uint8 adjustVal) {
+    if (!adjustVal) return;
+    int8 volShift = adjustVal > 0x0F ? (adjustVal >> 4) : -adjustVal;
+
+    if (((uint8)(chan->volume + volShift)) <= 64)   chan->volume += volShift;
+    else if (volShift < 0)                          chan->volume = 0;
+    else                                            chan->volume = 64;
 }
-    
+
+static void tonePortamento(Channel* chan, int16 adjustVal) {
+    if (!chan->targetPeriod) return;
+    int32 diff = chan->basePeriod + chan->portamento - chan->targetPeriod;
+
+    if (diff > 0) {
+        if (diff - adjustVal > 0) {
+            chan->portamento -= adjustVal;
+            return;
+        }
+        goto lDone;
+    }
+    {
+        if (diff + adjustVal < 0) {
+            chan->portamento += adjustVal;
+            return;
+        }
+        goto lDone;
+    }
+
+lDone:
+    chan->basePeriod   = chan->targetPeriod;
+    chan->portamento   = 0;
+    chan->targetPeriod = 0;
+}
+
 void processTickFX(Channel* chan) {
     switch (chan->effect) {
         //Portamento up
         case 0x1: {
-            if (song.rowTick == 0) break;
-            chan->portamento -= chan->effectArg;
+            if (!song.rowTick) break;
+            chan->portamento -= MUL16(chan->effectArg);
             break;
         }
 
         //Portamento down
         case 0x2: {
-            if (song.rowTick == 0) break;
-            chan->portamento += chan->effectArg;
+            if (!song.rowTick) break;
+            chan->portamento += MUL16(chan->effectArg);
             break;
         }
-     
+
+        //Tone portamento
+        case 0x3: {
+            if (!song.rowTick) break;
+            if (chan->effectArg) chan->tonePortMem = chan->effectArg;
+            tonePortamento(chan, MUL16(chan->tonePortMem));
+            break;
+        }
+
+        //Vibrato
+        case 0x4: {
+            if (!song.rowTick) break;
+            break;
+        }
+
         //Volume slide + Tone portamento
         case 0x5: {
-            FX_ADJUSTVOLUME(chan->volume, chan->effectArg);
+            if (!song.rowTick) break;
+            volumeSlide(chan, chan->effectArg);
+            tonePortamento(chan, MUL16(chan->tonePortMem));
             break;
         }
 
         //Volume slide + Vibrato
         case 0x6: {
-            FX_ADJUSTVOLUME(chan->volume, chan->effectArg);
+            if (!song.rowTick) break;
+            volumeSlide(chan, chan->effectArg);
+            break;
+        }
+
+        //Tremolo
+        case 0x7: {
+            if (!song.rowTick) break;
             break;
         }
 
         //Volume slide
         case 0xA: {
-            FX_ADJUSTVOLUME(chan->volume, chan->effectArg);
+            if (!song.rowTick) break;
+            volumeSlide(chan, chan->effectArg);
             break;
         }
 
-        default: {
+        default: {                                                                           
             break;
         }
     }
@@ -57,51 +106,18 @@ void processRowFX(Channel *chan) {
             break;
         }
 
-        //Tone portamento
-        case 0x3: {
-
-            break;
-        }
-
-        //Vibrato
-        case 0x4: {
-
-            break;
-        }
-
-        //Volume slide + Tone portamento
-        case 0x5: {
-
-            break;
-        }
-
-        //Volume slide + Vibrato
-        case 0x6: {
-
-            break;
-        }
-
-        //Tremolo
-        case 0x7: {
-
-            break;
-        }
-
         //Set panning (Not used)
-        //-
+        case 0x8: {
+            break;
+        }
     
         //Set offset
         case 0x9: {
-            if (chan->progress > 0) break;
-
-            if (chan->effectArg != 0) chan->progress = chan->effectArg << 24;
-            else chan->progress = chan->offsetMem << 24;
             break;
         }
 
         //Position jump
         case 0xB: {
-
             break;
         }
 
@@ -124,11 +140,11 @@ void processRowFX(Channel *chan) {
 
             switch (subC) {
                 case 0x1: {
-                    chan->portamento -= subA;
+                    chan->portamento -= MUL16(subA);
                     break;
                 }
                 case 0x2: {
-                    chan->portamento += subA;
+                    chan->portamento += MUL16(subA);
                     break;
                 }
                 case 0xA: {

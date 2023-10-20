@@ -22,7 +22,7 @@ void* memAlloc(uint32 count) {
     return HeapAlloc(GetProcessHeap(), 0, count);
 }
 
-void CALLBACK waveOutProc(HWAVEOUT hWO, UINT uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
+void CALLBACK waveOutProc(HWAVEOUT hWO, uint32 uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     WAVEHDR* hdr = (LPWAVEHDR)param1;
     if (uMsg == WOM_DONE) {
@@ -82,14 +82,16 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
         songn = argv[1];
     else
 #ifdef _DEBUG
-        songn = L"D:\\Code\\VSProjects\\Demo01\\NewRelease\\occ_san_geen.mod";
+        //songn = L"D:\\Code\\VSProjects\\Demo01\\NewRelease\\occ_san_geen.mod";
         //songn = L"F:\\Music\\MODULE\\MOD\\space_debris.mod";
-        //songn = L"F:\\Music\\MODULE\\MOD\\GSLINGER.MOD";
+        //songn = L"F:\\Music\\MODULE\\qTest.mod";
+        songn = L"F:\\Music\\MODULE\\MOD\\GSLINGER.MOD";
 #else
         songn = 0;
 #endif
+    SetConsoleTitleW(songn);
     loadSong(songn);
-    system("pause");
+    //system("pause");
     initMME();
 }
 
