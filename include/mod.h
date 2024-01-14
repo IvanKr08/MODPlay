@@ -1,22 +1,24 @@
 #pragma once
+#include <Windows.h>
 #include "utils.h"
 #include "console.h"
 
 #pragma pack(push, 1)
 typedef struct {
-    int8 l;
-    int8 r;
+    int16 l;
+    int16 r;
 } LRSample;
 #pragma pack(pop)
 
 typedef struct {
     uint32 length;
-    uint32 repeatStart;
-    uint32 repeatEnd;
+    uint32 loopStart;
+    uint32 loopEnd;
     uint8  finetune;
     uint8  volume;
     int8*  data;
     char   name[23];
+    bool   hasLoop;
 } InstrSample;
 
 typedef struct {
@@ -44,6 +46,7 @@ typedef struct {
     uint8       effect;             //Effect num
     uint8       effectArg;          //Effect arg
     uint8       finetune;           //(E-5X) Last finetune (Set from sample if row sample != 0)
+    uint8       arpBaseNote;        //(0-XX) Arpeggio base note
 
     uint8       volume;             //Current volume (Set from sample if row sample != 0)
 
@@ -97,5 +100,5 @@ InstrSample* getSample(uint8 sample);
 Note         getNote(uint8 channel);
 Channel*     getChannel(uint8 channel);
 
-void         fillBuffer(LRSample* buff, HWAVEOUT h);
+void         fillBuffer(LRSample* buff, uint32 size);
 void         loadSong(wstr fileName);

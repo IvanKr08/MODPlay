@@ -1,5 +1,4 @@
 #pragma once
-#include <Windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -13,10 +12,6 @@ typedef int32           bool;
 typedef char*           cstr;
 typedef wchar_t*        wstr;
 
-void* memAlloc(uint32 count);
-void fatal(bool val, cstr msg);
-
-#pragma region Shift MUL/DIV
 #define DIV2(val) ((val) >> 1)
 #define DIV4(val) ((val) >> 2)
 #define DIV8(val) ((val) >> 3)
@@ -36,10 +31,15 @@ void fatal(bool val, cstr msg);
 #define MUL16K(val) ((val) << 14)
 #define MUL32K(val) ((val) << 15)
 #define MUL64K(val) ((val) << 16)
-#pragma endregion
 
-#define A_SR  (44100)       //SampleRate (11025 | 22050 | 44100)
-#define A_BPB (4410)        //Bytes per buffer
+#define A_SAMPLEWIDTH 2
+#define A_CHANNELS 2
+#define A_SR  (48000)       //SampleRate (11025 | 22050 | 44100)
+#define A_BPB (4096)        //Bytes per buffer 4410
 #define A_SPB (DIV2(A_BPB)) //Samples per buffer
 
-#define ABS(x) (x > 0) ? (x) : (-x)
+#define M_ABS(x) (x > 0) ? (x) : (-x)
+
+void* memAlloc(uint32 count);
+void fatal(bool val, cstr msg);
+void fatalCode(uint32 val, cstr msg);

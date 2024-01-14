@@ -1,6 +1,6 @@
-#include "console.h"
+#include <Windows.h>
 #include <stdarg.h>
-
+#include "console.h"
 //===
 
 static HANDLE stdi = 0, stdo = 0;
@@ -22,6 +22,9 @@ void printC(char value) {
 }
 void printS(cstr string) {
     WriteConsoleA(stdo, string, strlen(string), 0, 0);
+}
+void printW(wstr string) {
+    WriteConsoleW(stdo, string, wcslen(string), 0, 0);
 }
 void printFormat(cstr format, uint32 count, ...) {
     char string[1024];
@@ -119,7 +122,7 @@ void printRow() {
     }
     WriteConsoleA(stdo, printRowBuff, 61, 0, 0);
 
-    return;
+    //return;
     CONSOLE_SCREEN_BUFFER_INFO info;
     GetConsoleScreenBufferInfo(stdo, &info);
     COORD coord = { .X = 9, .Y = info.dwCursorPosition.Y - 1 };

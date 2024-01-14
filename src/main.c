@@ -1,18 +1,49 @@
+#include <Windows.h>
+#include <wchar.h>
 #include "utils.h"
 #include "mod.h"
 #include "console.h"
-#include <wchar.h>
 
-static WAVEFORMATEX soundFormat;
-static HWAVEOUT hWaveOut;
-static WAVEHDR outputHeader1, outputHeader2;
-static LRSample buff1[A_SPB], buff2[A_SPB];
+/*
+#include <winnt.h>
+#ifndef NT_ERROR
+#define NT_ERROR(Status) ((((ULONG)(Status)) >> 30) == 3)
+#endif
+
+    NTSYSAPI
+        NTSTATUS
+        NTAPI
+        NtSetTimerResolution(
+            _In_ ULONG                DesiredResolution,
+            _In_ BOOLEAN              SetResolution,
+            _Out_ PULONG              CurrentResolution);
+
+    NTSYSAPI
+        NTSTATUS
+        NTAPI
+        NtQueryTimerResolution(
+            _Out_ PULONG              MaximumResolution,
+            _Out_ PULONG              MinimumResolution,
+            _Out_ PULONG              CurrentResolution);
+
+#pragma comment (lib, "ntdll.lib")
+*/
+
+void MMEInit();
+void DSInit();
+void DSPlay();
 
 void fatal(bool val, cstr msg) {
-    if (!val) {
-        printS("FATAL: ");
-        printS(msg);
-        printC('\n');
+    if (val) {
+        printFormat("FATAL: %s\n", 1, msg);
+        system("pause");
+        TerminateProcess(GetCurrentProcess(), -1);
+    }
+}
+
+void fatalCode(uint32 val, cstr msg) {
+    if (val) {
+        printFormat("FATAL: %s (Error: 0x%X)\n", 2, msg, val);
         system("pause");
         TerminateProcess(GetCurrentProcess(), -1);
     }
@@ -22,78 +53,49 @@ void* memAlloc(uint32 count) {
     return HeapAlloc(GetProcessHeap(), 0, count);
 }
 
-void CALLBACK waveOutProc(HWAVEOUT hWO, uint32 uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
-    WAVEHDR* hdr = (LPWAVEHDR)param1;
-    if (uMsg == WOM_DONE) {
-        static int outputBufferIndex;
-        
-        if (outputBufferIndex == 1) {
-            outputBufferIndex = 2;
-            waveOutWrite(hWO, &outputHeader2, sizeof(WAVEHDR));
-            fillBuffer(buff1, hWO);
-        }
-        else {
-            outputBufferIndex = 1;
-            waveOutWrite(hWO, &outputHeader1, sizeof(WAVEHDR));
-            fillBuffer(buff2, hWO);
-        }
-    }
-}
-
-void initMME() {
-    memset(buff1, 0x80, A_SPB << 1);
-    memset(buff2, 0x80, A_SPB << 1);
-
-    soundFormat.wFormatTag = WAVE_FORMAT_PCM;
-    soundFormat.nChannels = 2;
-    soundFormat.wBitsPerSample = 8;
-    soundFormat.nSamplesPerSec = A_SR;
-    soundFormat.nAvgBytesPerSec = A_SR * 2;
-    soundFormat.nBlockAlign = 2;
-
-    outputHeader1.dwBufferLength = A_BPB;
-    outputHeader1.lpData = (LPSTR)buff1;
-    outputHeader1.dwUser = 1;
-
-    outputHeader2.dwBufferLength = A_BPB;
-    outputHeader2.lpData = (LPSTR)buff2;
-    outputHeader1.dwUser = 0;
-
-    waveOutOpen(&hWaveOut, WAVE_MAPPER, &soundFormat, (DWORD_PTR)waveOutProc, 0, CALLBACK_FUNCTION);
-
-    waveOutPrepareHeader(hWaveOut, &outputHeader1, sizeof(WAVEHDR));
-    waveOutPrepareHeader(hWaveOut, &outputHeader2, sizeof(WAVEHDR));
-
-    waveOutWrite(hWaveOut, &outputHeader1, sizeof(WAVEHDR));
-    waveOutWrite(hWaveOut, &outputHeader2, sizeof(WAVEHDR));
-
-    Sleep(-1);
-}
-
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow) {
     initConsole();
-    
+    DSInit();
+    timeBeginPeriod(1);
+    ULONG curRes;
+
     int argc;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    wstr songn;
+    wstr songn, *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
 
     if (argc > 1)
         songn = argv[1];
     else
 #ifdef _DEBUG
         //songn = L"D:\\Code\\VSProjects\\Demo01\\NewRelease\\occ_san_geen.mod";
-        //songn = L"F:\\Music\\MODULE\\MOD\\space_debris.mod";
+        songn = L"F:\\Music\\MODULE\\MOD\\space_debris.mod";
+        //songn = L"F:\\Music\\MODULE\\MOD\\hymn_to_aurora.mod";
         //songn = L"F:\\Music\\MODULE\\qTest.mod";
-        songn = L"F:\\Music\\MODULE\\MOD\\GSLINGER.MOD";
+        //songn = L"F:\\Music\\MODULE\\MOD\\GSLINGER.MOD";
+        //songn = L"F:\\Music\\MODULE\\MOD\\emax-doz.mod";
+        //songn = L"F:\\Music\\MODULE\\MOD\\SHADOWRU.MOD";
+        //songn = L"F:\\Music\\MODULE\\MOD\\fairlight.MOD";
 #else
         songn = 0;
 #endif
+
     SetConsoleTitleW(songn);
     loadSong(songn);
-    //system("pause");
-    initMME();
+    DSPlay();
+    Sleep(-1);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /*
