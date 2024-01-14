@@ -71,7 +71,7 @@ static WORD colors[] = {
 };
 static cstr hex = "0123456789ABCDEF";
 
-static char printRowBuff[] = "?? | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! |\n";
+static cstr printRowBuff = "?? | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! | ERR OR !!!! |\n";
 void printRow() {
     if (song.row < 10) {
         printRowBuff[0] = '0';
