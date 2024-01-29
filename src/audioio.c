@@ -9,23 +9,23 @@
 #include "mod.h"
 
 #pragma region Utils
-static void fillFormat(WAVEFORMATEX *sf) {
-	sf->wFormatTag  	= WAVE_FORMAT_PCM;
-	sf->nChannels	    = A_CHANNELS;
-	sf->wBitsPerSample	= MUL8(A_SAMPLEWIDTH);
-	sf->nSamplesPerSec  = A_SR;
-	sf->nAvgBytesPerSec = A_SR * A_CHANNELS * A_SAMPLEWIDTH;
-	sf->nBlockAlign	    = A_CHANNELS * A_SAMPLEWIDTH;
-	sf->cbSize			= 0;
+static void fillFormat(WAVEFORMATEX *sound) {
+	sound->wFormatTag  		= WAVE_FORMAT_PCM;
+	sound->nChannels	    = A_CHANNELS;
+	sound->wBitsPerSample	= MUL8(A_SAMPLEDEPTH);
+	sound->nSamplesPerSec   = A_SAMPLERATE;
+	sound->nAvgBytesPerSec  = A_SAMPLERATE * A_SAMPLESIZE;
+	sound->nBlockAlign	    = A_SAMPLESIZE;
+	sound->cbSize			= 0;
 }
 #pragma endregion
 
 #pragma region MME
 static HWAVEOUT	mmeOut;
 static WAVEHDR	mmeH1,			 mmeH2;
-static LRSample	mmeBuff1[A_SPB], mmeBuff2[A_SPB];
+static LRSample	mmeBuff1[A_BUFFERSAMPLES], mmeBuff2[A_BUFFERSAMPLES];
 
-static void CALLBACK MMEThread(HWAVEOUT hWO, uint32 uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
+static void CALLBACK mmeThreadProc(HWAVEOUT hWO, uint32 uMsg, uint32 dwInstance, uint32 param1, uint32 param2) {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 	//WAVEHDR* hdr = (LPWAVEHDR)param1;
 
@@ -35,60 +35,52 @@ static void CALLBACK MMEThread(HWAVEOUT hWO, uint32 uMsg, uint32 dwInstance, uin
 		if (outputBufferIndex == 1) {
 			outputBufferIndex = 2;
 			waveOutWrite(hWO, &mmeH2, sizeof(WAVEHDR));
-			fillBuffer(mmeBuff1, A_SPB);
+			fillBuffer(mmeBuff1, A_BUFFERSAMPLES);
 		}
 		else {
 			outputBufferIndex = 1;
 			waveOutWrite(hWO, &mmeH1, sizeof(WAVEHDR));
-			fillBuffer(mmeBuff2, A_SPB);
+			fillBuffer(mmeBuff2, A_BUFFERSAMPLES);
 		}
 	}
 }
 
-void MMEInit() {
-	memset(mmeBuff1, 0x80, MUL2(A_SPB));
-	memset(mmeBuff2, 0x80, MUL2(A_SPB));
+void mmeInit() {
+	memset(mmeBuff1, 0x80, MUL2(A_BUFFERSAMPLES));
+	memset(mmeBuff2, 0x80, MUL2(A_BUFFERSAMPLES));
 
 	WAVEFORMATEX soundFormat;
 	fillFormat(&soundFormat);
 
-	mmeH1.dwBufferLength = A_BPB;
+	mmeH1.dwBufferLength = A_BUFFERSIZE;
 	mmeH1.lpData = (LPSTR)mmeBuff1;
 	mmeH1.dwUser = 1;
 
-	mmeH2.dwBufferLength = A_BPB;
+	mmeH2.dwBufferLength = A_BUFFERSIZE;
 	mmeH2.lpData = (LPSTR)mmeBuff2;
 	mmeH1.dwUser = 0;
 
-	waveOutOpen(&mmeOut, WAVE_MAPPER, &soundFormat, (DWORD_PTR)MMEThread, 0, CALLBACK_FUNCTION);
+	waveOutOpen(&mmeOut, WAVE_MAPPER, &soundFormat, (DWORD_PTR)mmeThreadProc, 0, CALLBACK_FUNCTION);
 
 	waveOutPrepareHeader(mmeOut, &mmeH1, sizeof(WAVEHDR));
 	waveOutPrepareHeader(mmeOut, &mmeH2, sizeof(WAVEHDR));
 
 	waveOutWrite(mmeOut, &mmeH1, sizeof(WAVEHDR));
 	waveOutWrite(mmeOut, &mmeH2, sizeof(WAVEHDR));
-
-	Sleep(-1);
 }
 #pragma endregion
 
 #pragma region DirectSound
-static LPDIRECTSOUND	   dsOut;
-static LPDIRECTSOUNDBUFFER dsPBBuffer, dsSBBuffer;
-static DWORD			   dsBufferStep;
-
-static LPDWORD			   dsThreadID;
-static HANDLE			   dsThread;
-
-static LPDIRECTSOUNDNOTIFY dsNotify;
-static DWORD			   dsNotifyCount;
+static IDirectSound	      *dsOut;
+static IDirectSoundBuffer *dsPBBuffer, *dsSBBuffer;
+static IDirectSoundNotify* dsNotify;
+static DWORD			   dsBufferStep, dsNotifyCount, dsThreadID;
+static HANDLE			   dsThread, *dsNotifyHandles;
 static DSBPOSITIONNOTIFY  *dsNotifyEvents;
-static HANDLE		      *dsNotifyHandles;
 
-static DWORD WINAPI DSThread(LPVOID lpParam) {
+static DWORD WINAPI dsThreadProc(LPVOID lpParam) {
 	static DWORD pos = 0;
-	DWORD  playPos, totalBytes;
-	DWORD  size1, size2;
+	DWORD  playPos, totalBytes, size1, size2;
 	LPVOID buff1, buff2;
 
 	while (1) {
@@ -96,21 +88,20 @@ static DWORD WINAPI DSThread(LPVOID lpParam) {
 
 		//WTF!? Thanks to OpenMPT (Чтение чужих программ ГОРАЗДО эффективнее книг...)
 		IDirectSoundBuffer_GetCurrentPosition(dsSBBuffer, &playPos, 0);
-
-		totalBytes = ((playPos - pos + A_BPB) % A_BPB) & ~7;
-
+		totalBytes = ((playPos - pos + A_BUFFERSIZE) % A_BUFFERSIZE) & ~(A_SAMPLESIZE - 1);
 		IDirectSoundBuffer_Lock(dsSBBuffer, pos, totalBytes, &buff1, &size1, &buff2, &size2, 0);
-		if (size1) fillBuffer((LRSample*)buff1, size1);
-		if (size2) fillBuffer((LRSample*)buff2, size2);
+		
+		if (size1) fillBuffer(buff1, size1 / A_SAMPLESIZE);
+		if (size2) fillBuffer(buff2, size2 / A_SAMPLESIZE);
 		IDirectSoundBuffer_Unlock(dsSBBuffer, buff1, size1, buff2, size2);
 
-		pos = (pos + size1 + size2) % A_BPB;
+		pos = (pos + size1 + size2) % A_BUFFERSIZE;
 	}
 }
 
-static void DSSetupNotify() {
-	dsNotifyCount	= 4;
-	dsBufferStep	= A_BPB / dsNotifyCount;
+static void dsSetupNotify() {
+	dsNotifyCount	= 10;
+	dsBufferStep	= A_BUFFERSIZE / dsNotifyCount;
 	dsNotifyEvents	= memAlloc(sizeof(DSBPOSITIONNOTIFY) * dsNotifyCount);
 	dsNotifyHandles = memAlloc(sizeof(HANDLE) * dsNotifyCount);
 
@@ -122,15 +113,18 @@ static void DSSetupNotify() {
 		dsNotifyEvents[i].hEventNotify = dsNotifyHandles[i];
 		dsNotifyEvents[i].dwOffset = offset - 1;
 	}
-	dsNotifyEvents[dsNotifyCount - 1].dwOffset = A_BPB - 1;
+	dsNotifyEvents[dsNotifyCount - 1].dwOffset = A_BUFFERSIZE - 1;
 
-	fatal(
+	fatalCode(
 		IDirectSoundNotify_SetNotificationPositions(dsNotify, dsNotifyCount, dsNotifyEvents),
 		"Failed to set notification positions.");
 }
 
-void DSInit() {
-	CoInitialize(0);
+void dsInit() {
+	fatalCode(
+		CoInitialize(0),
+		"Failed to initialize COM.");
+	
 
 	fatalCode(
 		DirectSoundCreate(0, &dsOut, 0),
@@ -161,7 +155,7 @@ void DSInit() {
 	DSBUFFERDESC dsSBDesc;
 	memset(&dsSBDesc, 0, sizeof(dsSBDesc));
 	dsSBDesc.dwSize		   = sizeof(dsSBDesc);
-	dsSBDesc.dwBufferBytes = A_BPB;
+	dsSBDesc.dwBufferBytes = A_BUFFERSIZE;
 	dsSBDesc.lpwfxFormat   = &soundFormat;
 	dsSBDesc.dwFlags       = DSBCAPS_CTRLPOSITIONNOTIFY | DSBCAPS_GLOBALFOCUS | DSBCAPS_GETCURRENTPOSITION2;
 	fatalCode(
@@ -173,19 +167,19 @@ void DSInit() {
 		"Failed to query SoundNotify.");
 
 	fatal(
-		(dsThread = CreateThread(0, 0, DSThread, 0, CREATE_SUSPENDED, &dsThreadID)) == INVALID_HANDLE_VALUE,
+		(dsThread = CreateThread(0, 0, dsThreadProc, 0, CREATE_SUSPENDED, &dsThreadID)) == INVALID_HANDLE_VALUE,
 		"Failed to create sound thread.");
 
-	DSSetupNotify();
+	dsSetupNotify();
 
-	printFormat("Using: \t\tDirectSound\nSamplerate: \t%i\nChannels: \t%i\nSample width: \t%i\nBuffer size: \t%i\n\n", 4, A_SR, A_CHANNELS, A_SAMPLEWIDTH, A_BPB);
+	printFormat("Using: \t\tDirectSound\nSamplerate: \t%i\nChannels: \t%i\nSample depth: \t%i\nBuffer size: \t%i\n\n", 4, A_SAMPLERATE, A_CHANNELS, A_SAMPLEDEPTH * 8, A_BUFFERSIZE);
 }
 
-void DSPlay() {
+void dsPlay() {
 	DWORD size;
 	LPVOID buff;
-	IDirectSoundBuffer_Lock(dsSBBuffer, 0, A_BPB, &buff, &size, 0, 0, DSBLOCK_ENTIREBUFFER);
-	fillBuffer((LRSample*)buff, size);
+	IDirectSoundBuffer_Lock(dsSBBuffer, 0, A_BUFFERSIZE, &buff, &size, 0, 0, DSBLOCK_ENTIREBUFFER);
+	fillBuffer(buff, size / A_SAMPLESIZE);
 	IDirectSoundBuffer_Unlock(dsSBBuffer, buff, size, 0, 0);
 	IDirectSoundBuffer_Play(dsSBBuffer, 0, 0, DSBPLAY_LOOPING);
 

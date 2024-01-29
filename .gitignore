@@ -1,4 +1,4 @@
-# Prerequisites
+﻿# Prerequisites
 *.d
 
 # Object files
@@ -50,14 +50,7 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
-/.vs/Demo01
 /Debug
 /Release
-/x64/Debug
-/Demo01.vcxproj.filters
-/Demo01.vcxproj.user
-/NewDebug
-/NewRelease
-/Rel
-/㩆瑜獥屴整瑳爮睡
-/x64/NewDebug
+/.vs/MODPlay
+*.bak

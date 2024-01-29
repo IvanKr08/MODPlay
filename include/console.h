@@ -3,7 +3,9 @@
 #include "mod.h"
 #include "tables.h"
 
-void initConsole();
+void consoleInit();
+
+void setConsoleTitle(wstr title);
 
 void printI(int32 value);
 void printC(char value);
