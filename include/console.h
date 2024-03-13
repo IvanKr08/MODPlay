@@ -6,6 +6,7 @@
 void consoleInit();
 
 void setConsoleTitle(wstr title);
+void handleInput();
 
 void printI(int32 value);
 void printC(char value);
