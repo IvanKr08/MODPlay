@@ -20,25 +20,30 @@ void dumpSound(apisample *buff, uint32 totalSamples);
 #define SETPAN15(chanPan, val)    (chanPan) = ((val) == 15)  ? 256 : ((val) * 17)
 #define SETPAN255(chanPan, val)   (chanPan) = ((val) == 255) ? 256 : (val)
 
-Song song;
+Song song; 
 
-//Очень неудачный вариант микшера. Клиппинг применяется на каждом канале.
-//Переписать, изменив порядок действий и метод усиление.
-//Требуется поддержка звуков больше 64KiB, сглаживание громкости, линейная интерполяция, глобальная громкость
-//Раздельная Л/П громкость имеет смысл при наличии огибающей и глобальной громкости.
-//Инкремент указателя должен быть быстрее обращения по индексу
+//РћС‡РµРЅСЊ РЅРµСѓРґР°С‡РЅС‹Р№ РІР°СЂРёР°РЅС‚ РјРёРєС€РµСЂР°. РљР»РёРїРїРёРЅРі РїСЂРёРјРµРЅСЏРµС‚СЃСЏ РЅР° РєР°Р¶РґРѕРј РєР°РЅР°Р»Рµ.
+//РџРµСЂРµРїРёСЃР°С‚СЊ, РёР·РјРµРЅРёРІ РїРѕСЂСЏРґРѕРє РґРµР№СЃС‚РІРёР№ Рё РјРµС‚РѕРґ СѓСЃРёР»РµРЅРёРµ.
+//РўСЂРµР±СѓРµС‚СЃСЏ РїРѕРґРґРµСЂР¶РєР° Р·РІСѓРєРѕРІ Р±РѕР»СЊС€Рµ 64KiB, СЃРіР»Р°Р¶РёРІР°РЅРёРµ РіСЂРѕРјРєРѕСЃС‚Рё, Р»РёРЅРµР№РЅР°СЏ РёРЅС‚РµСЂРїРѕР»СЏС†РёСЏ, РіР»РѕР±Р°Р»СЊРЅР°СЏ РіСЂРѕРјРєРѕСЃС‚СЊ
+//Р Р°Р·РґРµР»СЊРЅР°СЏ Р›/Рџ РіСЂРѕРјРєРѕСЃС‚СЊ РёРјРµРµС‚ СЃРјС‹СЃР» РїСЂРё РЅР°Р»РёС‡РёРё РѕРіРёР±Р°СЋС‰РµР№ Рё РіР»РѕР±Р°Р»СЊРЅРѕР№ РіСЂРѕРјРєРѕСЃС‚Рё.
+//РРЅРєСЂРµРјРµРЅС‚ СѓРєР°Р·Р°С‚РµР»СЏ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ Р±С‹СЃС‚СЂРµРµ РѕР±СЂР°С‰РµРЅРёСЏ РїРѕ РёРЅРґРµРєСЃСѓ
 void fillBuffer(apisample *buff, uint32 totalSamples) {
     memset(buff, A_SILENCECONST, totalSamples * A_SAMPLESIZE);
 
+    if (song.pause) {
+        handleInput();
+        Sleep(10);
+        return;
+    } 
+
     for (uint32 gPos = 0; gPos < totalSamples;) {
-        //Остаточный размер буфера (Отрендерить до конца) || Сколько осталось отрендерить до конца такта
+        //РћСЃС‚Р°С‚РѕС‡РЅС‹Р№ СЂР°Р·РјРµСЂ Р±СѓС„РµСЂР° (РћС‚СЂРµРЅРґРµСЂРёС‚СЊ РґРѕ РєРѕРЅС†Р°) || РЎРєРѕР»СЊРєРѕ РѕСЃС‚Р°Р»РѕСЃСЊ РѕС‚СЂРµРЅРґРµСЂРёС‚СЊ РґРѕ РєРѕРЅС†Р° С‚Р°РєС‚Р°
         uint32 maxToRender = min(totalSamples - gPos, song.samplesPerTick - song.alreadyRendered);
 
         for (uint8 channel = 0; channel < song.channelCount; channel++) {
             Channel *chan = GETCHANNEL(channel);
-
+            if (!chan->playing || chan->doNotMix) continue;
             //Optimize channels with zero volume 
-            if (!chan->playing) continue;
 
             Sample *sample = GETSAMPLE(chan->sample);
 
@@ -61,13 +66,13 @@ void fillBuffer(apisample *buff, uint32 totalSamples) {
                     }
                 }
 
-                //Остается надеяться, что это будет арифметический сдвиг
-                int32 data = (sample->data[index] * A_AMPLIFY * chan->playVolume) >> 12; //8 - громкость, 4 - усиление
+                //РћСЃС‚Р°РµС‚СЃСЏ РЅР°РґРµСЏС‚СЊСЃСЏ, С‡С‚Рѕ СЌС‚Рѕ Р±СѓРґРµС‚ Р°СЂРёС„РјРµС‚РёС‡РµСЃРєРёР№ СЃРґРІРёРі
+                int32 data = (sample->data[index] * song.mixVol * chan->playVolume) >> 12; //8 - РіСЂРѕРјРєРѕСЃС‚СЊ, 4 - СѓСЃРёР»РµРЅРёРµ
 
-                int32 r = buff[i * 2]     + DIV256(data * (256 - chan->panning));
-                int32 l = buff[i * 2 + 1] + DIV256(data * chan->panning);
+                int32 r = buff[i * 2]     + DIV256(data * (256 - (chan->panning)));
+                int32 l = buff[i * 2 + 1] + DIV256(data * (chan->panning));
 
-                //Не очень удачное решение
+                //РќРµ РѕС‡РµРЅСЊ СѓРґР°С‡РЅРѕРµ СЂРµС€РµРЅРёРµ
                 CLAMP(r, -32768, 32767);
                 CLAMP(l, -32768, 32767);
 
@@ -87,13 +92,12 @@ void fillBuffer(apisample *buff, uint32 totalSamples) {
 
 //=== Playback ===//
 static void volumeSlide(Channel *chan, uint8 speed) {
-    if (!speed) speed = chan->volSlideMem;
-    else chan->volSlideMem = speed;
+    //if (!speed) speed = chan->volSlideMem;
+    //else chan->volSlideMem = speed;
 
     uint8 spdDown = speed & 0xF, spdUp = speed >> 4;
 
-    //Указание сдвига одновременно вверх и вниз недопустимо (Но при этом должно приводить к сдвигу вверх)
-    //if (spdDown && spdUp) return;
+    //РЈРєР°Р·Р°РЅРёРµ СЃРґРІРёРіР° РѕРґРЅРѕРІСЂРµРјРµРЅРЅРѕ РІРІРµСЂС… Рё РІРЅРёР· РЅРµРґРѕРїСѓСЃС‚РёРјРѕ, РЅРѕ РїСЂРё СЌС‚РѕРј РґРѕР»Р¶РЅРѕ РїСЂРёРІРѕРґРёС‚СЊ Рє СЃРґРІРёРіСѓ РІРІРµСЂС…
     if (spdUp) VOLUP  (chan->volume, MUL4(spdUp), 256);
     else       VOLDOWN(chan->volume, MUL4(spdDown));
 }
@@ -101,16 +105,16 @@ static void volumeSlide(Channel *chan, uint8 speed) {
 static void tonePortamento(Channel *chan, int16 speed) {
     if (!chan->targetPeriod) return;
 
-    //Расстояние от текущего периода до целевого
+    //Р Р°СЃСЃС‚РѕСЏРЅРёРµ РѕС‚ С‚РµРєСѓС‰РµРіРѕ РїРµСЂРёРѕРґР° РґРѕ С†РµР»РµРІРѕРіРѕ
     int32 diff = chan->basePeriod + chan->portamento - chan->targetPeriod;
 
     if (diff > 0) {
-        //Если цель еще не достигнута
+        //Р•СЃР»Рё С†РµР»СЊ РµС‰Рµ РЅРµ РґРѕСЃС‚РёРіРЅСѓС‚Р°
         if ((diff - speed) > 0) {
             chan->portamento -= speed;
             return;
         }
-        //Иначе если цель достигнута или опережена
+        //РРЅР°С‡Рµ РµСЃР»Рё С†РµР»СЊ РґРѕСЃС‚РёРіРЅСѓС‚Р° РёР»Рё РѕРїРµСЂРµР¶РµРЅР°
         goto lDone;
     }
     {
@@ -122,7 +126,7 @@ static void tonePortamento(Channel *chan, int16 speed) {
     }
 
 lDone:
-    //Включаем целевую ноту и сбрасываем портаменто
+    //Р’РєР»СЋС‡Р°РµРј С†РµР»РµРІСѓСЋ РЅРѕС‚Сѓ Рё СЃР±СЂР°СЃС‹РІР°РµРј РїРѕСЂС‚Р°РјРµРЅС‚Рѕ
     chan->basePeriod = chan->targetPeriod;
     chan->baseNote = chan->targetNote;
     chan->portamento = 0;
@@ -163,31 +167,25 @@ static void tremolo(Channel *chan) {
     chan->tremoloPos &= 0x3F;
 }
 
+
+// Table for Invert Loop and Funk Repeat effects (EFx, .MOD only)
+uint8 ModEFxTable[16] = { 0,  5,  6,  7,  8, 10, 11, 13, 16, 19, 22, 26, 32, 43, 64, 128 };
+
 static void invertLoop(Channel *chan) {
-    // EFx implementation for MOD files (PT 1.1A and up: Invert Loop)
-    // This effect trashes samples. Thanks to 8bitbubsy for making this work. :)
-    if (!chan->invertLoopSpeed || !GETSAMPLE(chan->sample)->hasLoop) return;
-    /*
-    chn.nEFxDelay += ModEFxTable[chn.nEFxSpeed & 0x0F];
-    if (chn.nEFxDelay < 128)
-        return;
-    chn.nEFxDelay = 0;
+    Sample *smp = GETSAMPLE(chan->sample);
 
-    const SmpLength loopStart = pModSample->uFlags[CHN_LOOP] ? pModSample->nLoopStart : pModSample->nSustainStart;
-    const SmpLength loopEnd = pModSample->uFlags[CHN_LOOP] ? pModSample->nLoopEnd : pModSample->nSustainEnd;
+    if (!chan->nEFxSpeed || !smp->hasLoop) return;
+    
+    chan->nEFxDelay += ModEFxTable[chan->nEFxSpeed];
+    if (chan->nEFxDelay < 128) return;
 
-    if (++chn.nEFxOffset >= loopEnd - loopStart)
-        chn.nEFxOffset = 0;
+    chan->nEFxDelay = 0;
+
+    if (++chan->nEFxOffset >= smp->loopEnd - smp->loopStart) chan->nEFxOffset = 0;
 
     // TRASH IT!!! (Yes, the sample!)
-    const uint8 bps = pModSample->GetBytesPerSample();
-    uint8 *begin = mpt::byte_cast<uint8 *>(pModSample->sampleb()) + (loopStart + chn.nEFxOffset) * bps;
-    for (auto &sample : mpt::as_span(begin, bps))
-    {
-        sample = ~sample;
-    }
-    pModSample->PrecomputeLoops(*this, false);
-    */
+    uint8 *s = &smp->data[smp->loopStart + chan->nEFxOffset];
+    *s = -1 - *s;
 }
 
 void setTempo(uint8 speed) {
@@ -196,8 +194,8 @@ void setTempo(uint8 speed) {
     if (speed < 32) song.ticksPerRow = speed;
     else {
         song.tempo = speed;;
-        //А НУЖНО БЫЛО ИСПОЛЬЗОВАТЬ ДРОБНЫЕ ВЫЧИСЛЕНИЯ. СУКА, НЕДЕЛЯ ПОИСКА
-        song.samplesPerTick = MUL512(A_SAMPLERATE) / (MUL1K((speed + song.tempoModifier) < 8 ? 8 : (speed + song.tempoModifier)) / 5);
+        //Рђ РќРЈР–РќРћ Р‘Р«Р›Рћ РРЎРџРћР›Р¬Р—РћР’РђРўР¬ Р”Р РћР‘РќР«Р• Р’Р«Р§РРЎР›Р•РќРРЇ. РЎРЈРљРђ, РќР•Р”Р•Р›РЇ РџРћРРЎРљРђ
+        song.samplesPerTick = MUL512(A_SAMPLERATE) / (MUL1K((speed + song.tempoModifier) < 16 ? 16 : (speed + song.tempoModifier)) / 5);
     }
 }
 
@@ -213,7 +211,7 @@ static void processRowFX(Channel *chan) {
 
     switch (chan->effect) {
         case 0x8: //Panning
-            SETPAN255(chan->panning, chan->effectArg);
+            SETPAN255(chan->panning, chan->effectArg << song.bit7Pan);
             break;
 
         case 0xB: //Position jump
@@ -256,10 +254,19 @@ static void processRowFX(Channel *chan) {
                 case 0xB: //Fine volume slide down
                     VOLDOWN(chan->volume, MUL4(extArg));
                     break;
+
+                case 0xE: //Fine volume slide down
+                    song.delay = extArg; //Replace, not add
+                    break;
+
+                case 0xF:
+                    chan->nEFxSpeed = extArg;
+                    invertLoop(chan);
             }
 
             break;
     }
+
 }
 
 //Exclude first tick
@@ -340,92 +347,124 @@ static void navigate() {
         song.position = 0;
     }
 
-    while (song.positions[song.position] == 254) song.position++; //Fix this
-    song.pattern = song.positions[song.position];
+    while (song.positions[song.position] > 254) {
+        if (song.positions[song.position] == 255 || ++song.position >= song.positionCount) {
+            song.position = 0;
+            printS("Reset.\n");
+        }
+    }
+    song.pattern      = song.positions[song.position];
     song.positionJump = 255;
     song.patternBreak = 255;
 
     printFormat("Pattern: %3i, position: %3i.\n", 2, song.pattern, song.position);
 }
 
+
+void setNote(Note note, Channel *chan) {
+    if (note.sample) {
+        if (note.effect != 3 && note.effect != 5) chan->qSample = note.sample;
+        chan->volume = MUL4(GETSAMPLE(note.sample)->volume);
+    }
+
+    if (note.note) {
+        //Plain note
+        if (note.effect != 3 && note.effect != 5) {
+
+            //Update sample
+            if (chan->qSample) {
+                chan->sample = chan->qSample;
+                chan->finetune = GETSAMPLE(chan->sample)->finetune;
+                chan->qSample = 0;
+            }
+
+            //(9-XX) Set offset
+            if (note.effect == 9) {
+                chan->offsetMem = note.effectArg ? note.effectArg : chan->offsetMem;
+                chan->progress = chan->offsetMem << 8 << 12;
+            }
+            else chan->progress = 0;
+
+            //(E-5X) Set Finetune
+            if (note.effect == 0xE && ARGL(note.effectArg) == 5)
+                chan->finetune = (note.effectArg & 0x0F);
+
+            chan->basePeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
+            chan->baseNote = note.note;
+            chan->portamento = 0;
+
+            //РќРѕРІР°СЏ РЅРѕС‚Р° РјРµРЅСЏРµС‚ С‚РµРєСѓС‰РёР№ РїРµСЂРёРѕРґ Рё СЃР±СЂР°СЃС‹РІР°РµС‚ РїРѕСЂС‚Р°РјРµРЅС‚Рѕ, РЅРѕ РЅРµ СЃР±СЂР°СЃС‹РІР°РµС‚ С†РµР»РµРІСѓСЋ РЅРѕС‚Сѓ. (PortaTarget.mod) { chan->targetPeriod = 0; }
+            chan->playing = 1;
+        }
+
+        //Tone portamento
+        else if (chan->basePeriod) {
+            chan->targetPeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
+            chan->targetNote = note.note;
+        }
+    }
+
+    if (note.vol) {
+        chan->volume = (note.vol - 1) * 4;
+    }
+}
+
 void onTick() {
     //Update row
     if (song.rowTick == 0) {
-        if (song.row > 63 || song.patternBreak < 64 || song.positionJump < 128) navigate();
-
-        //Update channels
-        for (uint8 i = 0; i < song.channelCount; i++) {
-            Note     note = GETNOTE(i);
-            Channel *chan = GETCHANNEL(i);
-
-            chan->effect    = note.effect;
-            chan->effectArg = note.effectArg;
-
-            if (note.sample) {
-                if (note.effect != 3 && note.effect != 5) chan->qSample = note.sample;
-                chan->volume = MUL4(GETSAMPLE(note.sample)->volume);
-            }
-
-            if (note.note) {
-                //Plain note
-                if (note.effect != 3 && note.effect != 5) {
-
-                    //Update sample
-                    if (chan->qSample) {
-                        chan->sample = chan->qSample;
-                        chan->finetune = GETSAMPLE(chan->sample)->finetune;
-                        chan->qSample = 0;
-                    }
-
-                    //(9-XX) Set offset
-                    if (note.effect == 9) {
-                        chan->offsetMem = note.effectArg ? note.effectArg : chan->offsetMem;
-                        chan->progress = chan->offsetMem << 8 << 12;
-                    }
-                    else chan->progress = 0;
-
-                    //(E-5X) Set Finetune
-                    if (note.effect == 0xE && ARGL(note.effectArg) == 5)
-                        chan->finetune = (note.effectArg & 0x0F);
-
-                    chan->basePeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
-                    chan->baseNote = note.note;
-                    chan->portamento = 0;
-
-                    //Новая нота меняет текущий период и сбрасывает портаменто, но не сбрасывает целевую ноту. (PortaTarget.mod) { chan->targetPeriod = 0; }
-                    chan->playing = 1;
-                }
-
-                //Tone portamento
-                else if (chan->basePeriod) {
-                    chan->targetPeriod = tunedPeriods[(note.note - 1) + (chan->finetune * 84)];
-                    chan->targetNote = note.note;
-                }
-            }
-
-            if (note.vol) {
-                chan->volume = (note.vol - 1) * 4;
-            }
-
-            processRowFX(chan);
+        if (song.delay > 0) {
+            song.delay--;
+            printS("Pattern delay...\n");
         }
-        //===
+        else {
+            if (song.row > 63 || song.patternBreak < 64 || song.positionJump < 128) navigate();
 
-        printRow();
-        song.row++;
-        song.rowTick = 0;
+            //Update channels
+            for (uint8 i = 0; i < song.channelCount; i++) {
+                Note     note = GETNOTE(i);
+                Channel *chan = GETCHANNEL(i);
+
+                chan->effect = note.effect;
+                chan->effectArg = note.effectArg;
+
+
+                if (chan->effect == 0xE && ARGL(note.effectArg) == 0xD && ARGR(note.effectArg) > 0) chan->delNote = note;
+                else setNote(note, chan);
+
+                processRowFX(chan);
+            }
+            //===
+
+            printRow();
+            song.row++;
+            goto lSkipTickEff;
+        }
     }
     //===
-    else for (uint32 i = 0; i < song.channelCount; i++) processTickFX(GETCHANNEL(i));
+    for (uint32 i = 0; i < song.channelCount; i++) {
+        Channel *chan = GETCHANNEL(i);
+        if (GETNOTE(i).sample) chan->nEFxSpeed = 0;
+        else invertLoop(chan);
+
+        if (chan->effect == 0xE &&
+            ARGL(chan->effectArg) == 0xD &&
+            ARGR(chan->effectArg) == song.rowTick) setNote(chan->delNote, chan);
+        processTickFX(chan);
+        if (chan->effect == 0xE &&
+            ARGL(chan->effectArg) == 0xC &&
+            ARGR(chan->effectArg) == song.rowTick) chan->volume = 0;
+    }
+lSkipTickEff:;
 
     //Update tick
     song.alreadyRendered = 0;
     for (uint32 i = 0; i < song.channelCount; i++) {
         Channel *chan = GETCHANNEL(i);
+
         if (chan->playing) {
             int32 period = chan->basePeriod + chan->portamento + chan->vibrato;
 
-            //Переполнение практически нереально
+            //РџРµСЂРµРїРѕР»РЅРµРЅРёРµ РїСЂР°РєС‚РёС‡РµСЃРєРё РЅРµСЂРµР°Р»СЊРЅРѕ
             period = (period > -1) ? period : 0;
             if (period == 0) {
                 chan->currentStep = chan->currentFreq = 0;
@@ -459,7 +498,7 @@ void onTick() {
             }
 
             lSkip:
-            //Слишком мало места под высокочастотные звуки. Временное исправление. Нужен uint64
+            //РЎР»РёС€РєРѕРј РјР°Р»Рѕ РјРµСЃС‚Р° РїРѕРґ РІС‹СЃРѕРєРѕС‡Р°СЃС‚РѕС‚РЅС‹Рµ Р·РІСѓРєРё. Р’СЂРµРјРµРЅРЅРѕРµ РёСЃРїСЂР°РІР»РµРЅРёРµ. РќСѓР¶РµРЅ uint64
             //chan->currentFreq = (chan->currentFreq < 65536) ? chan->currentFreq : 65535;
             chan->currentStep = (chan->currentFreq << 12u) / (uint32)A_SAMPLERATE;
             chan->playVolume = chan->volume + chan->tremolo;
@@ -474,45 +513,3 @@ void onTick() {
     //===
 }
 //===
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          //chan->currentFreq = (7093789 / 2) / period;
-
-                  //chan->basePeriod = ((tunedPeriodsCompact[chan->finetune * 12 + (note.note - 1) % 12] << 5) >> ((note.note - 1) / 12));
-
-
-
-
-
-//chan->currentFreq = ((((3546895L * 4) << 4) / (period))) * 4;
-//chan->currentStep = (((long long)chan->currentFreq << 32) / (48000ULL << 4)) >> 16;
-//printI(8363ULL * ((1712ULL << 8ULL) << 4ULL) / (((period / 16ULL) << 8ULL) + 4ULL));
-
-            //Если опустить громкость до нуля, а после поднять ее, то семпл продолжит
-            //воспроизведение с неправильной позиции (Частично исправлено)
-            //~~~(if (vol == 0) progress = min(progress + maxToRender, end) )~~~

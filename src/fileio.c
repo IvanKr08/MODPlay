@@ -1,5 +1,5 @@
 // Prevent clipping based on number of channels... If all channels are playing at full volume, "256 / #channels"
-// is the maximum possible sample pre-amp without getting distortion (Compatible mix levels given).
+// is the maximum possible sample pre-amp without getting distortion (Compatible doNotMix levels given).
 // The more channels we have, the less likely it is that all of them are used at the same time, though, so cap at 32...
 //m_nSamplePreAmp = Clamp(256 / m_nChannels, 32, 128);
 
@@ -24,6 +24,7 @@ static wstr debugName =
 //L"F:\\Music\\MODULE\\MOD\\emax-doz.mod";
 //L"F:\\Music\\MODULE\\MOD\\intro_number_61.mod";
 //L"F:\\Music\\MODULE\\MOD\\eye of the tiger.mod";
+//L"F:\\Music\\MODULE\\MOD\\MCHAN\\iron seed - aard.mod";
 //L"F:\\Music\\MODULE\\MOD\\SHADOWRU.MOD";
 //L"F:\\Music\\MODULE\\strshine2.mod";
 //L"F:\\Music\\MODULE\\vibrato.mod";
@@ -32,7 +33,8 @@ static wstr debugName =
 //L"F:\\Music\\MODULE\\MOD\\fairlight.MOD";
 //L"F:\\Music\\MODULE\\MOD\\MCHAN\\DOPE.MOD";
 //L"F:\\Music\\MODULE\\speedPrecTest.MOD";
-L"F:\\Music\\MODULE\\MOD\\MCHAN\\far away smoothloop.mod";
+//L"F:\\Music\\MODULE\\MOD\\MCHAN\\far away smoothloop.mod";
+L"F:\\Music\\MODULE\\MOD\\MCHAN\\reprove.mod";
 //L"F:\\Music\\MODULE\\MOD\\MCHAN\\experience.mod";
 //L"F:\\Music\\MODULE\\MODCONV\\aryx.mod";
 //L"F:\\Music\\MODULE\\S3M\\unreal - wormhole part.S3M";
@@ -67,7 +69,8 @@ static void   readFile(HANDLE file, uint32 count, void* buff) {
     static uint32 offset;
     for (size_t i = 0; i < count; i++, offset++) ((byte*)buff)[i] = ((byte*)file)[offset];
 #else
-    fatal(!ReadFile(file, buff, count, 0, 0), "File read error");
+    DWORD a;
+    fatal(!ReadFile(file, buff, count, &a, 0), "File read error");
 #endif
 }
 
@@ -197,21 +200,26 @@ static void loadMOD(HANDLE file) {
     
     
     //Read patterns
-    ARRALLOC(song.patterns, song.patternCount * 64U * song.channelCount);
-    for (uint32 i = 0; i < (song.patternCount * 64U * song.channelCount); i++) {
-        Note  *note     = &song.patterns[i];
-        uint16 period   = 0, *noteAddr = 0;;
-        uint32 rawNote  = (read32B(file));
-        note->sample    = ((rawNote & 0b11110000000000000000000000000000) >> 24);
-        period          = ((rawNote & 0b00001111111111110000000000000000) >> 16);
-        note->sample   |= ((rawNote & 0b00000000000000001111000000000000) >> 12);
-        note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
-        note->effectArg = ((rawNote & 0b00000000000000000000000011111111));
-        note->note      = 0;
-        note->vol       = 0;
+    ARRALLOC(song.patterns, song.patternCount);
+    for (uint32 i = 0; i < song.patternCount; i++) {
+        ARRALLOC(song.patterns[i].data, (64 * song.channelCount));
+        song.patterns[i].rows = 64;
 
-        if (period)   noteAddr   = bsearch(&period, notePeriods, 84, 2, periodCompare);
-        if (noteAddr) note->note = (uint16)(noteAddr - notePeriods) + 1;
+        for (uint32 j = 0; j < (64 * song.channelCount); j++) {
+            Note  *note     = &song.patterns[i].data[j];
+            uint16 period   = 0, *noteAddr = 0;;
+            uint32 rawNote  = (read32B(file));
+            note->sample    = ((rawNote & 0b11110000000000000000000000000000) >> 24);
+            period          = ((rawNote & 0b00001111111111110000000000000000) >> 16);
+            note->sample   |= ((rawNote & 0b00000000000000001111000000000000) >> 12);
+            note->effect    = ((rawNote & 0b00000000000000000000111100000000) >> 8);
+            note->effectArg = ((rawNote & 0b00000000000000000000000011111111));
+            note->note      = 0;
+            note->vol       = 0;
+
+            if (period)   noteAddr   = bsearch(&period, notePeriods, 84, 2, periodCompare);
+            if (noteAddr) note->note = (uint16)(noteAddr - notePeriods) + 1;
+        }
     }
     //===
 
@@ -235,11 +243,14 @@ static void loadMOD(HANDLE file) {
 
     song.tempo          = 125;
     song.ticksPerRow    = 6;
-    for (uint8 i = 0, chan = 0; i < song.channelCount; i++, chan = i % 4) GETCHANNEL(i)->panning = (chan == 1 || chan == 2) ? 192 : 64;
+    for (uint8 i = 0; i < song.channelCount; i++) GETCHANNEL(i)->panning = ((i & 3) == 1 || (i & 3) == 2) ? 192 : 64;
 }
 
 static void loadS3MPatterns(HANDLE file, uint16 *patPtrs) {
+    ARRALLOC(song.patterns, song.patternCount);
+
     for (uint8 i = 0; i < song.patternCount; i++) {
+        ARRALLOCZERO(song.patterns[i].data, (64 * song.channelCount));
         setPos(file, MUL16(patPtrs[i]) + 2);
 
         for (uint8 row = 0; row < 64;) {
@@ -258,7 +269,7 @@ static void loadS3MPatterns(HANDLE file, uint16 *patPtrs) {
             }
 
             //Add variable-sized pattern support
-            Note *cell = &song.patterns[(i * 64 * song.channelCount) + (row * song.channelCount) + channel];
+            Note *cell = &song.patterns[i].data[(row * song.channelCount) + channel];
 
             //Note
             if (what & 0x20) {
@@ -512,7 +523,7 @@ void loadSongFile() {
     printS("Extension: \t");
     printW(type);
     printFormat("\nHandle: \t0x%X\nSize: \t\t%u\n", 2, file, fileSize);
-    setConsoleTitle(fileName);
+    //setConsoleTitle(fileName);
 
     if      (!lstrcmpiW(type, L".S3M")) loadS3M(file);
     else if (!lstrcmpiW(type, L".MOD")) loadMOD(file);
@@ -525,6 +536,7 @@ void loadSongFile() {
     song.patternBreak   = 255;
     song.positionJump   = 255;
     song.pattern        = song.positions[song.position];
+    song.mixVol         = 1024;
     onTick();
 #endif
 }
